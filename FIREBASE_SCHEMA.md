@@ -1,0 +1,385 @@
+# Firebase Schema — El Burrito
+
+## 1. Visión General
+
+El ecosistema utiliza **Firebase Realtime Database** como único bus de
+datos y almacenamiento persistente. No existe backend intermedio, base
+SQL ni otra fuente de verdad.
+
+- **Proyecto Firebase**: `burritounmsm`
+- **URL de RTDB**: `https://burritounmsm-default-rtdb.firebaseio.com`
+- **SDK**: `@react-native-firebase/database` v23.8.x en ambas apps
+- **Admin SDK**: `firebase-admin` con `serviceAccountKey.json` (solo para
+  el script de simulación Python)
+
+La base de datos se organiza en nodos independientes, cada uno con un
+propósito específico dentro del sistema. No hay relaciones foráneas
+formales; las asociaciones entre nodos se resuelven mediante claves
+compartidas (DNI, placa, pushId, uid).
+
+## 2. Convenciones de Datos
+
+### Timestamps
+
+Todos los registros de tiempo se almacenan como **Unix epoch en
+milisegundos** (enteros). No se usan strings ISO, fechas locales ni
+zonas horarias.
+
+| Origen | Método |
+|--------|--------|
+| JavaScript (DriverApp) | `Date.now()` |
+| Python (simulador) | `int(time.time() * 1000)` |
+| UserApp (server-side) | `database.ServerValue.TIMESTAMP` |
+
+Las fechas de asignación (turno diario) se almacenan como string
+`YYYY-MM-DD` para permitir filtros client-side.
+
+### Coordenadas
+
+Latitud y longitud se almacenan como **números flotantes** con precisión
+directa desde el hardware GPS. Sin truncamiento, redondeo ni
+transformación.
+
+### Booleanos de estado
+
+- `isActive`: presente en nodos de tracking. Indica si el bus está
+  transmitiendo activamente.
+- `activo`: presente en nodos de administración (choferes, buses,
+  asignaciones). Indica si el registro está vigente.
+
+### Claves primarias
+
+| Nodo | Tipo de clave | Ejemplo |
+|------|--------------|---------|
+| `/ubicacion_burrito` | Fija (único bus) | — |
+| `/ubicacion_buses/{placa}` | Placa del bus | `ABC-123` |
+| `/choferes/{dni}` | DNI del conductor | `12345678` |
+| `/buses/{placa}` | Placa del bus | `ABC-123` |
+| `/asignaciones/{pushId}` | Push ID generado por Firebase | `-Nx9...` |
+| `/usuarios/{uid}` | Auth UID de Firebase | `abc123...` |
+| `/comentarios/{pushId}` | Push ID generado por Firebase | `-Ny8...` |
+
+## 3. Nodos de Tracking
+
+Actualmente existen dos nodos relacionados con el seguimiento de
+ubicación debido al estado evolutivo del proyecto.
+
+### `/ubicacion_burrito`
+
+- **Propósito**: fuente de datos para el mapa en la UserApp. Contiene
+  la posición en vivo de un bus.
+- **Escritura**: script Python `simulador_burrito.py` (vía Admin SDK).
+- **Lectura**: UserApp, mediante listener continuo en
+  `map_service.ts` que alimenta `burritoLocationStore`.
+- **Estructura**:
+
+```json
+{
+  "ubicacion_burrito": {
+    "latitude": -12.056,
+    "longitude": -77.084,
+    "heading": 180,
+    "speed": 0,
+    "timestamp": 1718000000000,
+    "isActive": true
+  }
+}
+```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `latitude` | number | Coordenada del GPS |
+| `longitude` | number | Coordenada del GPS |
+| `heading` | number | Rumbo en grados (0–360) |
+| `speed` | number | Velocidad (sin unidad definida) |
+| `timestamp` | number | Unix epoch ms (generado en el origen) |
+| `isActive` | boolean | Heartbeat operativo del bus |
+
+### `/ubicacion_buses/{placa}`
+
+- **Propósito**: recepción de coordenadas desde la DriverApp física.
+  Cada bus tiene una entrada propia identificada por su placa.
+- **Escritura**: DriverApp mediante `firebase_service.ts`
+  (`updateBusLocation`/`stopBusService`). También se inicializa desde
+  `admin_service.ts` al crear un bus nuevo.
+- **Lectura**: ningún componente consume este nodo actualmente (enlace
+  planificado).
+- **Estructura** (payload de tracking):
+
+```json
+{
+  "ubicacion_buses": {
+    "ABC-123": {
+      "latitude": -12.056,
+      "longitude": -77.084,
+      "heading": 180,
+      "speed": 15,
+      "timestamp": 1718000000000,
+      "isActive": true
+    }
+  }
+}
+```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `latitude` | number | Coordenada del GPS |
+| `longitude` | number | Coordenada del GPS |
+| `heading` | number | Rumbo en grados |
+| `speed` | number | Velocidad |
+| `timestamp` | number | Unix epoch ms |
+| `isActive` | boolean | `true` durante tracking, `false` al detener |
+
+**Inicialización desde admin**: al crear un bus en el panel
+administrativo, se escribe `{ isActive: false }` en
+`/ubicacion_buses/{placa}` como marcador de existencia.
+
+```json
+{
+  "ubicacion_buses": {
+    "ABC-123": {
+      "isActive": false
+    }
+  }
+}
+```
+
+## 4. Nodos de Administración
+
+### `/choferes/{dni}`
+
+- **Propósito**: catálogo de conductores. Cada clave es el DNI del
+  conductor.
+- **Escritura**: `admin_service.createChofer()`.
+- **Lectura**: `admin_service.subscribeToChoferes()` (listener continuo
+  desde UserApp).
+- **Estructura**:
+
+```json
+{
+  "choferes": {
+    "12345678": {
+      "nombre": "Juan",
+      "apellidos": "Pérez López",
+      "activo": true
+    }
+  }
+}
+```
+
+**Creación**: además de escribir en RTDB, `createChofer()` crea una
+cuenta de Firebase Auth con email `${dni}@burritodriver.com` y
+contraseña igual al DNI. Usa una instancia secundaria de Auth
+(`SecondaryApp`) para no cerrar la sesión del admin.
+
+### `/buses/{placa}`
+
+- **Propósito**: catálogo de buses. Cada clave es la placa del vehículo
+  en mayúsculas.
+- **Escritura**: `admin_service.createBus()`.
+- **Lectura**: `admin_service.subscribeToBuses()` (listener continuo
+  desde UserApp).
+- **Estructura**:
+
+```json
+{
+  "buses": {
+    "ABC-123": {
+      "modelo": "Mercedes-Benz",
+      "marca": "OF-1721",
+      "anio": "2020",
+      "activo": true
+    }
+  }
+}
+```
+
+**Efecto secundario**: al crear un bus, se inicializa automáticamente
+`/ubicacion_buses/{placa}` con `{ isActive: false }`.
+
+### `/asignaciones/{pushId}`
+
+- **Propósito**: relación temporal entre un conductor y un bus para un
+  turno diario. Clave generada por `push()` de Firebase.
+- **Escritura**: `admin_service.createAsignacion()`.
+- **Lectura**: `admin_service.subscribeToAsignacionesHoy()` (listener
+  continuo desde UserApp) y DriverApp (consulta puntual con
+  `orderByChild('choferId')`).
+- **Estructura**:
+
+```json
+{
+  "asignaciones": {
+    "-Nx9aBcDeFgHiJkLmNoP": {
+      "choferId": "12345678",
+      "busId": "ABC-123",
+      "fecha": "2025-06-09",
+      "activo": true
+    }
+  }
+}
+```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `choferId` | string | DNI del conductor (coincide con clave en `/choferes`) |
+| `busId` | string | Placa del bus (coincide con clave en `/buses`) |
+| `fecha` | string | Fecha del turno en formato `YYYY-MM-DD` |
+| `activo` | boolean | `true` mientras el turno está vigente |
+
+**Validación de exclusividad**: al crear una asignación, el servicio
+verifica que ni el chofer ni el bus tengan otra asignación activa para
+la misma fecha.
+
+**Cancelación**: al cancelar, se establece `activo: false`. El registro
+no se elimina.
+
+## 5. Nodos de Autenticación
+
+### `/usuarios/{uid}`
+
+- **Propósito**: perfil de usuarios estudiantes. Creado durante el
+  registro o al completar el perfil tras Google Sign-In.
+- **Escritura**: `SignUpScreen.tsx` y `AvatarPickerScreen.tsx`.
+- **Lectura**: `SignInScreen.tsx` y `SignUpScreen.tsx` (consulta
+  puntual con `once('value')`).
+- **Estructura**:
+
+```json
+{
+  "usuarios": {
+    "abc123def456uid": {
+      "nombre": "Carlos",
+      "avatar": "ingeniero",
+      "email": "carlos@example.com",
+      "rol": "estudiante",
+      "ultimaConexion": 1718000000000
+    }
+  }
+}
+```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `nombre` | string | Nombre del estudiante |
+| `avatar` | string | Facultad: `ingeniero`, `salud`, `economista`, `humanidades` |
+| `email` | string | Email registrado en Firebase Auth |
+| `rol` | string | `estudiante` o `admin` |
+| `ultimaConexion` | number | ServerValue.TIMESTAMP del último login |
+
+**Nota sobre roles**: el rol se almacena en RTDB pero actualmente el
+único gating en UI es la visibilidad del enlace "Panel de Gestión" en
+el CustomDrawer (solo cuando `rol === 'admin'`). No existe un gating
+de rutas en el navegador basado en rol.
+
+## 6. Nodos de Feedback
+
+### `/comentarios/{pushId}`
+
+- **Propósito**: almacenar opiniones y calificaciones de estudiantes
+  enviadas desde el modal de feedback en el CustomDrawer.
+- **Escritura**: `MapService.sendFeedback()`.
+- **Lectura**: no se consume actualmente en ninguna pantalla.
+- **Estructura**:
+
+```json
+{
+  "comentarios": {
+    "-Ny8GhIjKlMnOpQrStUv": {
+      "username": "Carlos",
+      "avatar": "ingeniero",
+      "rating": 4,
+      "mensaje": "Buen servicio",
+      "uid": "abc123def456uid",
+      "email": "carlos@example.com",
+      "timestamp": 1718000000000
+    }
+  }
+}
+```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `username` | string | Nombre del estudiante |
+| `avatar` | string | Facultad seleccionada |
+| `rating` | number | Calificación (1–5) |
+| `mensaje` | string | Texto libre |
+| `uid` | string | Auth UID del remitente |
+| `email` | string | Email del remitente |
+| `timestamp` | number | ServerValue.TIMESTAMP (generado por Firebase) |
+
+## 7. Estado del Esquema
+
+Actualmente el esquema se encuentra en proceso de consolidación. Existen
+nodos que forman parte del flujo definitivo y otros que pertenecen a
+etapas anteriores del proyecto.
+
+### Nodos activos (flujo actual)
+
+| Nodo | Estado | Evolución prevista |
+|------|--------|-------------------|
+| `/asignaciones` | Definitivo | Se mantiene. Posible adición de índices. |
+| `/choferes` | Definitivo | Se mantiene. |
+| `/buses` | Definitivo | Se mantiene. |
+| `/usuarios` | Definitivo | Se mantiene. |
+| `/comentarios` | Provisional | Sin cambios previstos inmediatos. |
+| `/ubicacion_burrito` | Heredado | Será reemplazado. Dejará de usarse cuando se implemente el listener multi-bus. |
+| `/ubicacion_buses` | En transición | Nodo destino para el tracking definitivo. La DriverApp ya escribe aquí. La UserApp lo consumirá cuando se implemente el multi-bus listener. |
+
+### Nodos planificados (no existen en RTDB)
+
+| Nodo | Dependencia |
+|------|-------------|
+| `/recorridos` | Requiere implementación de geofencing y control de turnos |
+
+### Recomendaciones para cambios futuros
+
+Cuando el esquema evolucione, los siguientes documentos deben
+actualizarse en conjunto:
+
+- **PROJECT_CONTEXT.md**: sección de estado actual y limitaciones.
+- **ARCHITECTURE.md**: secciones de flujo de datos y consideraciones.
+- **README.md** de cada app: paths de RTDB relevantes.
+- **AGENTS.md** de cada app: paths que los asistentes deben conocer.
+
+## 8. Índices Requeridos
+
+Firebase Realtime Database requiere reglas de índice (`.indexOn`) para
+consultas con `orderByChild`. Sin el índice apropiado, la consulta
+falla o se ejecuta ineficientemente.
+
+### Índice actualmente necesario
+
+| Path | Campo índice | Origen de consulta |
+|------|-------------|-------------------|
+| `/asignaciones` | `choferId` | DriverApp: `orderByChild('choferId').equalTo(driverDni)` en `SendCoordinates.tsx` |
+
+Regla Firebase requerida:
+
+```json
+{
+  "rules": {
+    "asignaciones": {
+      ".indexOn": "choferId"
+    }
+  }
+}
+```
+
+### Nota sobre la creación de índices
+
+Los índices deben configurarse en la pestaña **Rules** de Firebase
+Console. No existen archivos de reglas en el repositorio. Si la regla
+no está definida, la consulta desde DriverApp fallará en producción con
+un error de permiso o advertencia de cliente no optimizado.
+
+## 9. Referencias Cruzadas
+
+| Documento | Relación |
+|-----------|----------|
+| `PROJECT_CONTEXT.md` | Visión general del sistema, propósito y limitaciones. |
+| `ARCHITECTURE.md` | Flujo de datos, ciclo de vida del tracking y topología del ecosistema. |
+| `TROUBLESHOOTING.md` | Incidentes relacionados con Firebase: persistence, path mismatch, regresiones. |
+| `DECISIONS.md` | ADR sobre persistence desactivada, arquitectura serverless, punto cero dinámico. |
+| BurritoDriverApp/README.md | Setup de Firebase, permisos Android y google-services.json. |
+| BurritoUserApp/README.md | Setup de Firebase, .env y google-services.json. |
