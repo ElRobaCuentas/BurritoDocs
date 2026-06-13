@@ -260,3 +260,43 @@ actualizar esta referencia.
 Estado:
 Revisión futura.
 
+## ROADMAP
+
+### [ ] Revisar el roadmap al finalizar cada fase
+
+**Fecha:** 09/06/2026
+
+**Motivo:**
+
+El roadmap refleja la planificación activa del proyecto.
+
+Cada vez que una fase finalice, será necesario:
+
+- marcarla como completada.
+- actualizar el estado general del documento.
+- promover la siguiente fase como prioridad actual.
+- verificar que las dependencias entre fases continúen siendo válidas.
+
+**Estado:**
+Revisión continua durante el desarrollo del proyecto.
+
+---
+
+### [ ] Revisar la Visión de Largo Plazo
+
+**Fecha:** 09/06/2026
+
+**Motivo:**
+
+La sección "Visión de Largo Plazo" almacena iniciativas que actualmente
+no forman parte del roadmap activo.
+
+Cuando alguna de esas iniciativas pase a desarrollo real (por ejemplo,
+Dashboard Web, Backend propio, API o Analytics), deberá:
+
+- eliminarse de la Visión de Largo Plazo.
+- incorporarse a una nueva fase del roadmap.
+- actualizar las prioridades del proyecto.
+
+**Estado:**
+Pendiente de revisión futura.
