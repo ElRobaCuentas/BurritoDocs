@@ -300,3 +300,139 @@ Dashboard Web, Backend propio, API o Analytics), deberá:
 
 **Estado:**
 Pendiente de revisión futura.
+
+
+## TROUBLESHOOTING
+
+### [ ] Revisar compatibilidad Android 14
+
+Fecha: 09/06/2026
+
+Motivo:
+
+TROUBLESHOOTING documenta el caso
+"InvalidForegroundServiceTypeException"
+con requisitos para Android 14.
+
+Cuando aparezcan Android 15/16 con nuevos
+requisitos para foreground services,
+o cuando se migre targetSdkVersion,
+verificar que el diagnóstico y la solución
+sigan siendo válidos.
+
+Estado:
+Revisión futura.
+
+---
+
+### [ ] Revisar Foreground Service cuando cambie Android
+
+Fecha: 09/06/2026
+
+Motivo:
+
+Si Android modifica nuevamente las
+restricciones para Foreground Services,
+actualizar síntomas, diagnóstico y solución
+del caso correspondiente en
+TROUBLESHOOTING.md.
+
+Estado:
+Revisión futura.
+
+---
+
+### [ ] Revisar caso de missing index
+
+Fecha: 09/06/2026
+
+Motivo:
+
+Se documenta el índice `choferId` sobre
+`/asignaciones`. Cuando se agreguen nuevas
+consultas con `orderByChild()` en el código,
+actualizar esta sección de troubleshooting.
+
+Estado:
+Revisión continua.
+
+---
+
+### [ ] Revisar caso de persistence
+
+Fecha: 09/06/2026
+
+Motivo:
+
+TROUBLESHOOTING documenta que persistence
+está desactivada intencionalmente.
+
+Si en el futuro alguien propone reactivarla
+(por ejemplo, para soporte offline),
+actualizar el caso con la nueva decisión.
+
+Estado:
+Revisión futura.
+
+---
+
+### [ ] Revisar caso de ubicación congelada
+
+Fecha: 09/06/2026
+
+Motivo:
+
+La solución actual para stale locations
+es la clasificación por timestamp en
+burritoLocationStore.
+
+Cuando se implemente Timeout Check
+automático (Fase 4 del roadmap),
+actualizar el diagnóstico y la solución.
+
+Estado:
+Pendiente de implementación.
+
+---
+
+### [ ] Documentar nuevos incidentes reales
+
+Fecha: 09/06/2026
+
+Motivo:
+
+Cada vez que aparezca un problema relevante
+durante el desarrollo o en producción,
+agregar un nuevo caso siguiendo la plantilla
+estándar:
+
+- Problema
+- Síntoma
+- Causa
+- Diagnóstico
+- Solución
+- Prevención
+
+Estado:
+Revisión continua.
+
+---
+
+### [ ] Revisar Troubleshooting al completar nuevas fases del roadmap
+
+Fecha: 09/06/2026
+
+Motivo:
+
+Cada nueva funcionalidad importante del
+sistema puede introducir nuevos escenarios
+de fallo.
+
+Cuando se implemente una fase importante
+(Multi-bus, Geofencing, Dashboard, Backend,
+etc.), revisar si aparecen nuevos casos que
+deban documentarse en TROUBLESHOOTING.md.
+
+Estado:
+Revisión continua durante la evolución
+del proyecto.
