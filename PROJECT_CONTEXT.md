@@ -67,7 +67,9 @@ Firebase Realtime Database actúa como el bus de datos. La UserApp nunca escribe
 - Autenticación de estudiantes (email/contraseña y Google Sign-In).
 - Asignación de conductores a buses mediante panel administrativo.
 - Captura de coordenadas GPS y transmisión continua a Firebase, incluso con la app en segundo plano.
-- Recepción en tiempo real de la ubicación del bus en la aplicación del estudiante mediante Mapbox. Actualmente esta funcionalidad utiliza el flujo de tracking legado; la migración al listener multi-bus forma parte de la Tarea 4.1 del roadmap (TOMAR EN CUENTA PARA FUTURAS REVISIONES)
+- Recepción en tiempo real de la ubicación del bus en la aplicación del estudiante mediante Mapbox. 
+Actualmente la aplicación utiliza la implementación de seguimiento para una única unidad.
+La arquitectura multi-bus forma parte de la evolución planificada del sistema; la migración al listener multi-bus forma parte de la Tarea 4.1 del roadmap (TOMAR EN CUENTA PARA FUTURAS REVISIONES)
 - Interfaz administrativa para gestionar conductores, buses y asignaciones.
 - Dark mode en la app de estudiantes.
 - Compatibilidad con Android 14 (API 34), incluyendo soporte para Foreground Services de tipo location. Este soporte utiliza foregroundServiceType: location requerido por Android para servicios de ubicación en primer plano.
