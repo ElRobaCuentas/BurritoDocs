@@ -109,9 +109,122 @@ Cada vez que se incorpore un componente importante (por ejemplo nuevos servicios
 * Cambios importantes en Firebase.
 * Incorporación de backend.
 * Cambios en la comunicación entre DriverApp y UserApp.
-
 **Estado:**
-Revisión continua durante la evolución del proyecto.
+Revisión continua durante la evolución
+del proyecto.
+
+
+## DECISIONS
+
+### [ ] Revisar ADR de persistence
+
+Fecha: 09/06/2026
+
+Motivo:
+
+DECISIONS.md documenta la desactivación de
+persistencia local (ADR-003).
+
+Si en el futuro se decide reactivarla por
+nuevos requisitos offline, actualizar la
+decisión y sus consecuencias.
+
+Estado:
+Revisión futura.
+
+---
+
+### [ ] Revisar ADR de comunicación mediante RTDB
+
+Fecha: 09/06/2026
+
+Motivo:
+
+Actualmente ambas aplicaciones se comunican
+únicamente mediante Firebase Realtime Database
+(ADR-007).
+
+Si en el futuro se incorpora un backend propio,
+mensajería, colas de eventos o una API
+intermedia, actualizar esta decisión
+arquitectónica.
+
+Estado:
+Pendiente de revisión cuando exista Backend
+Propio (ADR-014).
+
+---
+
+### [ ] Revisar ADR de foreground service
+
+Fecha: 09/06/2026
+
+Motivo:
+
+DECISIONS.md documenta el Foreground Service
+como requisito obligatorio (ADR-008).
+
+Si Android 15/16 introduce nuevas restricciones
+para foreground services, actualizar las
+consecuencias de la decisión.
+
+Estado:
+Revisión futura.
+
+---
+
+### [ ] Revisar ADR de Android-only DriverApp
+
+Fecha: 09/06/2026
+
+Motivo:
+
+La DriverApp está implementada únicamente para
+Android (ADR-012).
+
+Si se decide soportar iOS para la app del
+conductor, actualizar la decisión y las
+alternativas consideradas.
+
+Estado:
+Revisión futura.
+
+---
+
+### [ ] Incorporar ADR de geofencing
+
+Fecha: 09/06/2026
+
+Motivo:
+
+El geofencing está documentado como ADR
+planificada (ADR-013).
+
+Cuando se implemente oficialmente (Fase 2 del
+roadmap), mover de planificada a aceptada y
+completar el detalle de implementación.
+
+Estado:
+Pendiente de implementación.
+
+---
+
+### [ ] Revisar ADR de backend propio y dashboard web
+
+Fecha: 09/06/2026
+
+Motivo:
+
+El backend propio (ADR-014) y el dashboard web
+(ADR-015) están documentados como ADR
+planificadas en la visión de largo plazo.
+
+Cuando alguna de estas iniciativas pase a
+desarrollo activo, mover a ADR aceptadas y
+actualizar el detalle de implementación.
+
+Estado:
+Pendiente de revisión futura.
 
 
 ## FIREBASE_SCHEMA
