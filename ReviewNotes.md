@@ -114,6 +114,105 @@ Revisión continua durante la evolución
 del proyecto.
 
 
+## AGENTS (BurritoUserApp)
+
+### [ ] Revisar reglas críticas de AGENTS.md
+
+Fecha: 13/06/2026
+
+Motivo:
+
+AGENTS.md contiene 13 reglas críticas (sección 5)
+que reflejan la arquitectura actual del proyecto.
+
+Si cambia la arquitectura (nuevo store, nuevo
+patrón de tracking, backend propio, nueva forma de
+autenticación), las reglas de trabajo para la IA
+deben actualizarse para mantener el documento
+como fuente de verdad.
+
+Ejemplos de cambios que dispararían revisión:
+- Nuevo store de Zustand
+- Migración de RTDB a backend propio
+- Nuevo método de autenticación
+- Agregar soporte iOS a DriverApp
+- Reactivar snapToRoute o geofencing
+
+Estado:
+Revisión continua — AGENTS evoluciona con la
+arquitectura.
+
+---
+
+### [ ] Revisar checklist pre-entrega de AGENTS
+
+Fecha: 13/06/2026
+
+Motivo:
+
+El checklist de sección 9 en AGENTS.md lista 10
+verificaciones obligatorias antes de finalizar
+una tarea.
+
+Si se agregan nuevas herramientas al pipeline
+(nuevo linter, formateador, test runner, typecheck
+automatizado), actualizar el checklist.
+
+Estado:
+Revisión futura cuando cambie el pipeline.
+
+---
+
+### [ ] Revisar tabla de actualización de documentación
+
+Fecha: 13/06/2026
+
+Motivo:
+
+La tabla en sección 8 de AGENTS.md mapea cambios
+del código a documentos que deben actualizarse.
+
+Si se agregan o eliminan documentos del sistema
+documental, actualizar esta tabla.
+
+Estado:
+Revisión futura cuando cambie el sistema
+documental.
+
+---
+
+### [ ] Revisar arquitectura mínima necesaria
+
+Fecha: 13/06/2026
+
+Motivo:
+
+La sección "Arquitectura mínima necesaria"
+resume los componentes esenciales que una IA
+debe comprender antes de modificar código.
+
+Actualmente incluye:
+
+- Entry point
+- Auth gate
+- Navegación
+- Zustand
+- Firebase RTDB
+
+Si la arquitectura incorpora nuevos módulos
+principales o cambia el flujo de datos,
+actualizar esta sección.
+
+Ejemplos:
+- Backend propio
+- Dashboard compartido
+- Nuevo sistema de estado
+- Migración de Firebase
+
+Estado:
+Revisión continua.
+
+
 ## DECISIONS
 
 ### [ ] Revisar ADR de persistence
