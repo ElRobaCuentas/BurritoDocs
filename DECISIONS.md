@@ -494,3 +494,8 @@ Firebase RTDB (o del backend propio, cuando exista) para proporcionar:
 | `TROUBLESHOOTING.md` | Problemas derivados de estas decisiones. |
 | `ROADMAP.md` | Fases donde se ejecutarán las ADR planificadas. |
 | `BUGS_RESUELTOS/` | Bugs resueltos que originaron decisiones arquitectónicas. |
+| `ReviewNotes.md` | Notas de revisión futura sobre decisiones arquitectónicas. |
+| BurritoUserApp/README.md | Setup y funcionalidad de UserApp. |
+| BurritoDriverApp/README.md | Setup y funcionalidad de DriverApp. |
+| BurritoUserApp/AGENTS.md | Reglas de trabajo para IA en UserApp. |
+| BurritoDriverApp/AGENTS.md | Reglas de trabajo para IA en DriverApp. |

@@ -594,3 +594,4 @@ Android 14 acepte el servicio:
 | BurritoDriverApp/README.md | Setup, requisitos y funcionalidad de DriverApp. |
 | BurritoUserApp/README.md | Setup, requisitos y funcionalidad de UserApp. |
 | `BUGS_RESUELTOS/` | Historial de bugs resueltos durante el desarrollo. |
+| `ReviewNotes.md` | Notas de revisión futura sobre la arquitectura. |

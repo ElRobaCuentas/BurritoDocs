@@ -383,3 +383,6 @@ un error de permiso o advertencia de cliente no optimizado.
 | `DECISIONS.md` | ADR sobre persistence desactivada, arquitectura serverless, punto cero dinámico. |
 | BurritoDriverApp/README.md | Setup de Firebase, permisos Android y google-services.json. |
 | BurritoUserApp/README.md | Setup de Firebase, .env y google-services.json. |
+| `ROADMAP.md` | Fases y prioridades para la evolución del esquema. |
+| `ReviewNotes.md` | Notas de revisión futura para cambios en el esquema. |
+| `BUGS_RESUELTOS/` | Historial de bugs relacionados con Firebase RTDB. |

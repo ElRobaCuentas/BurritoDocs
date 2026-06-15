@@ -19,9 +19,9 @@ desarrollador o IA pueda entender el proyecto sin leer todo el código.
 - FIREBASE_SCHEMA.md ✅
 - READMEs (UserApp + DriverApp) ✅
 - ROADMAP.md ← Este documento
-- TROUBLESHOOTING.md
-- DECISIONS.md
-- AGENTS.md (UserApp + DriverApp)
+- TROUBLESHOOTING.md ✅
+- DECISIONS.md ✅
+- AGENTS.md (UserApp + DriverApp) ✅
 
 **Estado actual:** en progreso.
 **Próximo hito:** completar todos los documentos y retomar desarrollo.

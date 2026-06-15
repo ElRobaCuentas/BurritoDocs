@@ -778,3 +778,45 @@ documentarse en el archivo correspondiente:
 
 **Estado:**
 Pendiente — aplicar al corregir el próximo bug.
+
+---
+
+## BurritoUserApp/README.md
+
+### [ ] Revisar README de UserApp cuando cambie el setup o stack
+
+**Fecha:** 14/06/2026
+
+**Motivo:**
+El README de UserApp documenta stack, setup, scripts y
+documentación relacionada.
+
+Requiere revisión si:
+- Cambia la versión de React Native, Firebase, Zustand o Mapbox.
+- Se agregan o eliminan variables de entorno.
+- Cambia la estructura del código.
+- Se modifica el flujo de tracking descrito.
+
+**Estado:**
+Revisión futura cuando cambie el stack o setup.
+
+---
+
+## BurritoDriverApp/README.md
+
+### [ ] Revisar README de DriverApp cuando cambie el setup o stack
+
+**Fecha:** 14/06/2026
+
+**Motivo:**
+El README de DriverApp documenta stack, requisitos de
+plataforma, setup y flujo de tracking.
+
+Requiere revisión si:
+- Cambia la versión de React Native, Firebase o dependencias.
+- Se modifican los requisitos de Android (targetSdk, permisos).
+- Cambia la estructura del código o entry point.
+- Se agrega soporte iOS.
+
+**Estado:**
+Revisión futura cuando cambie el stack o plataforma.
