@@ -493,3 +493,4 @@ Firebase RTDB (o del backend propio, cuando exista) para proporcionar:
 | `FIREBASE_SCHEMA.md` | Estructura de nodos impactada por estas decisiones. |
 | `TROUBLESHOOTING.md` | Problemas derivados de estas decisiones. |
 | `ROADMAP.md` | Fases donde se ejecutarán las ADR planificadas. |
+| `BUGS_RESUELTOS/` | Bugs resueltos que originaron decisiones arquitectónicas. |

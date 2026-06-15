@@ -648,3 +648,133 @@ deban documentarse en TROUBLESHOOTING.md.
 Estado:
 Revisión continua durante la evolución
 del proyecto.
+
+
+## AGENTS (BurritoDriverApp)
+
+### [ ] Revisar reglas críticas de DriverApp
+
+Fecha: 13/06/2026
+
+Motivo:
+
+El AGENTS de DriverApp contiene 15 reglas
+críticas (3 generales y 12 específicas) que reflejan la
+arquitectura actual del tracking.
+
+Si cambia la arquitectura (nuevo patrón de
+tracking, migración a backend propio, soporte
+iOS, nuevo sistema de permisos), las reglas
+de trabajo para la IA deben actualizarse.
+
+Ejemplos:
+- Agregar geofencing
+- Reemplazar react-native-background-actions
+- Agregar soporte iOS
+- Cambiar el intervalo GPS
+
+Estado:
+Revisión continua — AGENTS evoluciona con la
+arquitectura.
+
+---
+
+### [ ] Revisar ciclo de vida del tracking
+
+Fecha: 13/06/2026
+
+Motivo:
+
+La sección 5 resume el ciclo de vida del tracking y referencia ARCHITECTURE.md para los detalles de implementación: login → fetchAssignment →
+requestAllPermissions → BackgroundJob →
+locationTask → stopProcess → signOut.
+
+Si se implementa geofencing, cierre automático
+de vueltas (Fase 2/4 del roadmap) o control
+de turnos, el ciclo de vida cambiará y debe
+actualizarse esta sección.
+
+Estado:
+Pendiente de implementación (ver ROADMAP.md).
+
+---
+
+### [ ] Revisar permisos Android
+
+Fecha: 13/06/2026
+
+Motivo:
+
+La sección 5 documenta la secuencia de 3
+permisos Android y la declaración del
+Foreground Service en 3 lugares.
+
+Si Android 15/16 introduce nuevas restricciones
+para foreground services de tipo location,
+verificar que los 3 lugares sigan siendo
+válidos.
+
+Estado:
+Revisión futura cuando cambie Android.
+
+---
+
+### [ ] Revisar checklist pre-entrega
+
+Fecha: 13/06/2026
+
+Motivo:
+
+El checklist de sección 9 incluye
+verificaciones obligatorias antes de finalizar
+una tarea.
+
+Si se agregan nuevas herramientas al pipeline
+(typecheck automatizado, nuevo linter, test
+runner), actualizar el checklist y los
+comandos de sección 3.
+
+Estado:
+Revisión futura cuando cambie el pipeline.
+
+---
+
+### [ ] Revisar estrategia de testing de DriverApp
+
+Fecha: 13/06/2026
+
+Motivo:
+
+Actualmente la aplicación conserva un test
+heredado (__tests__/App.test.tsx) que no
+representa el estado real del proyecto
+(importa ../App que ya no existe).
+
+Cuando se defina una estrategia de pruebas
+para DriverApp, actualizar:
+- AGENTS.md (sección 3 comandos, sección 9
+  checklist)
+- README.md
+- TROUBLESHOOTING.md (si aplica)
+
+Estado:
+Pendiente de definición.
+
+---
+
+## BUGS_RESUELTOS
+
+### [ ] Revisar y actualizar BUGS_RESUELTOS/ al corregir un bug nuevo
+
+**Fecha:** 14/06/2026
+
+**Motivo:**
+BUGS_RESUELTOS/ es el historial técnico de bugs del proyecto.
+Cada vez que se corrija un bug durante el desarrollo, debe
+documentarse en el archivo correspondiente:
+- `driverapp.md` para bugs de DriverApp
+- `userapp.md` para bugs de UserApp
+- `ambasApp.md` para bugs que afectan a ambas
+
+**Estado:**
+Pendiente — aplicar al corregir el próximo bug.

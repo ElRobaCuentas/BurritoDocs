@@ -593,3 +593,4 @@ Android 14 acepte el servicio:
 | `DECISIONS.md` | Decisiones de arquitectura (ADR) con razonamiento técnico. |
 | BurritoDriverApp/README.md | Setup, requisitos y funcionalidad de DriverApp. |
 | BurritoUserApp/README.md | Setup, requisitos y funcionalidad de UserApp. |
+| `BUGS_RESUELTOS/` | Historial de bugs resueltos durante el desarrollo. |

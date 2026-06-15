@@ -106,3 +106,4 @@ La arquitectura multi-bus forma parte de la evolución planificada del sistema; 
 | `DECISIONS.md` | Registro de decisiones de arquitectura (ADR). |
 | BurritoDriverApp/README.md | Setup y funcionalidad de la app del conductor. |
 | BurritoUserApp/README.md | Setup y funcionalidad de la app del estudiante. |
+| `BUGS_RESUELTOS/` | Historial de bugs resueltos por aplicación. |

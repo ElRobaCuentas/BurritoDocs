@@ -268,3 +268,4 @@ actual del proyecto, planificadas en fases futuras del roadmap.
 | `DECISIONS.md` | Decisiones de arquitectura (persistence, serverless, etc.). |
 | BurritoDriverApp/README.md | Setup y requisitos de DriverApp. |
 | BurritoUserApp/README.md | Setup y requisitos de UserApp. |
+| `BUGS_RESUELTOS/` | Historial técnico de bugs resueltos durante el desarrollo. |
