@@ -284,8 +284,10 @@ necesita un flujo de autenticación y un alcance de datos distinto.
 - El panel admin usa una instancia secundaria de Firebase Auth para
   crear cuentas de conductores sin cerrar la sesión del admin (ver
   ADR-011).
-- Los roles se almacenan en RTDB pero actualmente solo hay gating
-  visual (menú admin), no gating de rutas.
+- Los roles se almacenan en RTDB y el gating se implementa en dos
+  niveles: gating visual (menú admin condicional en CustomDrawer) y
+  gating de rutas (pantallas admin envueltas en `rol === 'admin'`
+  en StackNavigator).
 
 **Referencias:** ARCHITECTURE.md (sección 3 y 4), FIREBASE_SCHEMA.md
 (sección 5).

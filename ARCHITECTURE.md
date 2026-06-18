@@ -162,8 +162,9 @@ StackNavigator (root)
 ```
 
 El gating de autenticación es declarativo: `StackNavigator.tsx` renderiza
-distintos grupos de pantallas según `isLoggedIn` del store. No hay route
-guards manuales.
+distintos grupos de pantallas según `isLoggedIn` del store. Además, las
+pantallas de administración están envueltas en `rol === 'admin'`,
+añadiendo gating por rol sin route guards manuales.
 
 ### Estructura de archivos
 
