@@ -23,7 +23,7 @@ desarrollador o IA pueda entender el proyecto sin leer todo el código.
 - DECISIONS.md ✅
 - AGENTS.md (UserApp + DriverApp) ✅
 
-**Estado actual:** en progreso.
+**Estado actual:** COMPLETADO.
 **Próximo hito:** completar todos los documentos y retomar desarrollo.
 
 ## 3. Fase 1: Tracking Multi-Bus
