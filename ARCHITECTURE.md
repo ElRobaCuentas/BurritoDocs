@@ -36,10 +36,6 @@ websockets nativos del SDK.
 │   BurritoUserApp  │ ←────────── │  /buses           │
 │   (Android/iOS)   │    listen   │  /usuarios        │
 └──────────────────┘             │  /comentarios     │
-                                  │  /ubicacion_burrito │
-      
-      /ubicacion_burrito (LO VAMOS A QUITAR MAS ADELANTE)
-      
                                   └──────────────────┘
 ```
 
@@ -214,16 +210,19 @@ src/
 | `userStore` | Zustand persist + AsyncStorage | uuid, username, avatar, rol, isLoggedIn |
 | `themeStore` | AsyncStorage manual | isDarkMode |
 | `mapStore` | Efímera | isFollowing, command (center/follow) |
-| `burritoLocationStore` | Efímera | location, isConnecting, busMovementStatus, startTracking/stopTracking |
+| `burritoLocationStore` | Efímera | locations (Record<string,BurritoLocation>), busMovementStates, isConnecting, startTracking/stopTracking |
 | `drawerStore` | Efímera | isOpen, open/close |
 
-### burritoLocationStore (tracking)
+### burritoLocationStore (tracking multi-bus)
 
-Inicia/para el listener de RTDB. Recibe actualizaciones vía
-`MapService.subscribeToBusLocation()` sobre el path `/ubicacion_burrito`.
+Inicia/para el listener de RTDB. Recibe todas las ubicaciones vía
+`MapService.subscribeToBusLocations()` sobre el path `/ubicacion_buses`.
+Almacena las posiciones en `locations: Record<string, BurritoLocation>`,
+indexado por placa.
 
-Aplica un filtro de deduplicación: rechaza timestamps no más nuevos que
-el actual. Clasifica el estado del bus según antigüedad del timestamp:
+Aplica un filtro de deduplicación por placa: rechaza timestamps no más
+nuevos que el actual para cada bus. Clasifica el estado de cada bus
+individualmente según antigüedad de su timestamp:
 
 | Condición | Estado |
 |-----------|--------|
@@ -231,7 +230,8 @@ el actual. Clasifica el estado del bus según antigüedad del timestamp:
 | timestamp age < 12s | `moving` |
 | timestamp age >= 12s | `stopped` |
 
-Un intervalo de 2s refresca periódicamente la clasificación.
+Un intervalo de 2s refresca periódicamente la clasificación de todos
+los buses activos.
 
 ### Map.tsx (renderizado)
 
@@ -300,11 +300,10 @@ updateBusLocation(busId, {   ← firebase_service.ts
     ↓
 Firebase RTDB                ← /ubicacion_buses/{busId}
     ↓
-UserApp NO recibe esto todavía
-    (UserApp escucha /ubicacion_burrito, no /ubicacion_buses)
+UserApp recibe el delta vía subscribeToBusLocations()
 ```
 
-### Flujo de visualización (UserApp)
+### Flujo de visualización (UserApp — multi-bus)
 
 ```
 UserApp inicia
@@ -313,17 +312,17 @@ MapScreen.mount()
     ↓
 burritoLocationStore.startTracking()
     ↓
-MapService.subscribeToBusLocation()  ← se suscribe a /ubicacion_burrito
+MapService.subscribeToBusLocations()  ← se suscribe a /ubicacion_buses
     ↓
 ref.on('value', callback)            ← Firebase empuja deltas
     ↓
-Callback recibe {latitude, longitude, heading, isActive, timestamp}
+Callback recibe Record<string, BurritoLocation> { placa1: {lat, lng, ...}, placa2: {...}, ... }
     ↓
-Filtro dedup (timestamp > actual)
+Filtro dedup por placa (timestamp > actual por cada bus)
     ↓
-Set en burritoLocationStore.location
+Set en burritoLocationStore.locations
     ↓
-Map.tsx re-lectura selectiva del store
+Map.tsx deriva burritoLocation del primer bus activo (fallback)
     ↓
 RNAnimated interpola posición del marcador (~2s)
     ↓
@@ -412,7 +411,7 @@ Admin asigna:
 | `src/features/map/screen/MapScreen.tsx` | Orquestador del mapa, inicializa tracking |
 | `src/features/map/components/Map.tsx` | Mapbox canvas, marcadores, ruta, radar, follow |
 | `src/features/map/components/CustomDrawer.tsx` | Drawer animado con perfil, tema, feedback, admin |
-| `src/features/map/services/map_service.ts` | Listener RTDB a `/ubicacion_burrito`, envío de feedback |
+| `src/features/map/services/map_service.ts` | Listener RTDB a `/ubicacion_buses`, envío de feedback |
 | `src/features/admin/services/admin_service.ts` | CRUD choferes, buses, asignaciones |
 | `src/store/burritoLocationStore.ts` | Estado del tracking, dedup, clasificación moving/stopped/offline |
 | `src/store/userStore.ts` | Sesión persistente del usuario |
@@ -426,7 +425,7 @@ Admin asigna:
 | Servicio | Uso en DriverApp | Uso en UserApp |
 |----------|-----------------|----------------|
 | Firebase Auth | Login con email/password | Login email/password + Google Sign-In |
-| Firebase RTDB | `/ubicacion_buses/{busId}`, `/asignaciones` | `/ubicacion_burrito`, `/choferes`, `/buses`, `/asignaciones`, `/usuarios`, `/comentarios` |
+| Firebase RTDB | `/ubicacion_buses/{busId}`, `/asignaciones` | `/ubicacion_buses`, `/choferes`, `/buses`, `/asignaciones`, `/usuarios`, `/comentarios` |
 | Firebase Analytics | No | Eventos de usuario (mapa abierto, bus seguido, mapa centrado) |
 | Firebase Crashlytics | No | Configurado en firebase.json |
 | ServerValue.TIMESTAMP | No | Sí (6 ocurrencias: ultimaConexion, feedback) |
@@ -544,11 +543,11 @@ Android 14 acepte el servicio:
 
 ### Estado del tracking
 
-- La arquitectura actual utiliza un **único bus como fuente** de datos.
-  El path de tracking que la UserApp escucha actualmente corresponde a la
-  fuente de datos vigente. La evolución hacia un listener multi-bus está
-  planificada y será documentada cuando forme parte de la arquitectura
-  oficial.
+- La arquitectura actual utiliza **múltiples buses como fuente** de datos.
+  La UserApp escucha `/ubicacion_buses` y recibe un `Record<string, BurritoLocation>`
+  con todas las placas activas. Los componentes de UI (`Map.tsx`, `MapBranding.tsx`)
+  derivan el estado del primer bus activo como fallback hasta que se implemente
+  el render multi-marcador completo (T4.4).
 
 ### Geofencing
 

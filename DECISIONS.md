@@ -409,6 +409,59 @@ pero no está soportada ni probada.
 
 ---
 
+### ADR-016: Migración a listener multi-bus con fallback al primer bus activo
+
+**Estado:** Aceptada.
+
+**Contexto:**
+
+El sistema inició con un único bus de prueba. La DriverApp escribía a
+`/ubicacion_burrito` (legacy) y la UserApp escuchaba ese mismo path.
+Al expandir la flota, se necesitaba que la UserApp recibiera ubicaciones
+de todos los buses simultáneamente, no solo de uno.
+
+**Decisión:**
+
+Migrar el listener de RTDB de `/ubicacion_burrito` a `/ubicacion_buses`.
+El store de Zustand cambió de `location: BurritoLocation | null` a
+`locations: Record<string, BurritoLocation>`, indexado por placa.
+Cada bus tiene su propio filtro de deduplicación y clasificación
+moving/stopped/offline independiente.
+
+Para no afectar la UI antes del render multi-marcador (T4.4), los
+componentes de mapa (`Map.tsx`, `MapBranding.tsx`) derivan la ubicación
+a mostrar seleccionando el primer bus activo con timestamp más reciente.
+Este fallback es temporal y será reemplazado por marcadores individuales
+por bus en T4.4.
+
+**Alternativas consideradas:**
+
+- Mantener `/ubicacion_burrito` legacy y agregar un segundo listener:
+  descartado. Habría duplicación de suscripciones y el store tendría dos
+  fuentes de verdad parcialmente solapadas.
+- Migrar directamente a render multi-marcador en el mismo cambio:
+  descartado por §5.6 (no expandir alcance). El cambio se dividió en
+  lógica de datos (T3.1) y renderizado (T4.4).
+
+**Consecuencias:**
+
+- La UserApp ahora escucha un solo path (`/ubicacion_buses`) que contiene
+  todos los buses activos.
+- El nodo legacy `/ubicacion_burrito` queda huérfano. La DriverApp ya no
+  escribe allí. Puede eliminarse en una limpieza futura de la RTDB.
+- El filtro de deduplicación ahora itera por cada placa individual, con
+  su propia referencia de timestamp.
+- La UI sigue mostrando un solo marcador (fallback al primer bus activo)
+  hasta T4.4.
+- Se actualizaron 5 archivos: `map_service.ts` (path + callback),
+  `burritoLocationStore.ts` (estructura), `MapScreen.tsx` (prop),
+  `Map.tsx`, `MapBranding.tsx` (derivación de primer bus activo).
+
+**Referencias:** ARCHITECTURE.md (sección 4 y 5), FIREBASE_SCHEMA.md
+(secciones 3 y 7), TAREAS.txt (T3.1, T4.4).
+
+---
+
 ## ADR Planificadas
 
 ### ADR-013: Geofencing con Punto Cero Dinámico
