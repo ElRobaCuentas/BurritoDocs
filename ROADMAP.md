@@ -2,114 +2,65 @@
 
 ## 1. Visión General
 
-El proyecto se encuentra cerrando su **fase de documentación** para
-estabilizar la base técnica antes de retomar el desarrollo activo.
+El proyecto se encuentra en el **Bloque A (Casa/Calle)** de desarrollo,
+con la infraestructura base completa (T1.1, T2.1, T2.2, T3.1) y el
+tracking multi-bus operativo. El backlog oficial detallado vive en
+`TAREAS.txt`.
 
-A partir de aquí, el roadmap se organiza en fases con dependencias
-funcionales: cada fase desbloquea los requisitos de la siguiente.
+A partir de aquí, el roadmap se organiza en dos bloques con
+dependencias funcionales.
 
-## 2. Fase Actual: Documentación
+## 2. Tareas Completadas
 
-Completar la documentación del ecosistema para que cualquier
-desarrollador o IA pueda entender el proyecto sin leer todo el código.
+| Tarea | Descripción | Proyecto |
+|-------|-------------|---------|
+| T1.1 | Route Guard por Rol: gating de rutas admin via `rol === 'admin'` en StackNavigator | BurritoUserApp |
+| T2.1 | Firebase Rules: RBAC, `.indexOn` en `/asignaciones/choferId`, mínimo privilegio | Consola Firebase |
+| T2.2 | Testing Unitario: Haversine (6 tests), getMovementStatus (6 tests), filtro dedup (7 tests), App.test.tsx corregido | BurritoUserApp + BurritoDriverApp |
+| T3.1 | Multi-bus listener: migración de `/ubicacion_burrito` a `/ubicacion_buses`, store `Record<string, BurritoLocation>` | BurritoUserApp |
 
-**Documentos incluidos:**
-- PROJECT_CONTEXT.md ✅
-- ARCHITECTURE.md ✅
-- FIREBASE_SCHEMA.md ✅
-- READMEs (UserApp + DriverApp) ✅
-- ROADMAP.md ← Este documento
-- TROUBLESHOOTING.md ✅
-- DECISIONS.md ✅
-- AGENTS.md (UserApp + DriverApp) ✅
+## 3. Bloque A: Casa / Calle
 
-**Estado actual:** COMPLETADO.
-**Próximo hito:** completar todos los documentos y retomar desarrollo.
+Implementación y pruebas con GPS local (casa/calle del desarrollador).
+Hardware: 1 Motorola (DriverApp background + UserApp foreground).
+No requiere estar en el campus universitario.
 
-## 3. Fase 1: Tracking Multi-Bus
+| Orden | Tarea | Proyecto | Depende de |
+|-------|-------|----------|------------|
+| 1 | T3.2: Multi-bus integración — validación del pipeline completo con datos reales | UserApp | T3.1 |
+| 2 | T4.1: Heartbeat — setInterval(8000) para mantener timestamp fresco | DriverApp | T3.2 |
+| 3 | T5.3: Timeout Check — ocultar buses sin actualización >60s | UserApp | T4.1 |
+| 4 | T4.2: Control de Turnos — botones INICIAR/FINALIZAR, creación de `/recorridos` | DriverApp | T4.1 |
+| 5 | T4.4: Multi-bus render completo — ShapeSource + SymbolLayer por cada bus activo | UserApp | T3.2 |
+| 6 | T4.5: Monitor de Flota — sección "Flota en servicio ahora" en AdminPanelScreen | UserApp | T4.4 |
+| 7 | T4.6: Estadísticas — StatsScreen con métricas de recorridos | UserApp | T4.2 |
+| 8 | T4.3: Geofencing (implementación) — máquina de estados con Haversine, histéresis 40m/80m | DriverApp | T4.2 |
+| 9 | T5.2: Smoothing (implementación) — algoritmo de interpolación (moving average / Kalman ligero) | UserApp | T4.4 |
 
-Unificar el listener de ubicación en la UserApp para que consuma
-múltiples buses simultáneamente desde el nodo de tracking definitivo.
+**Nota sobre calculateDistance():** la función Haversine se extrajo a
+`BurritoUserApp/src/features/map/utils/geo.ts` y está cubierta por
+6 tests unitarios (T2.2). Está disponible para su uso en geofencing
+(T4.3) y smoothing (T5.2).
 
-**Tareas incluidas:**
+## 4. Bloque B: Campus UNMSM
 
-| Tarea | Depende de |
-|-------|-----------|
-| Multi-bus listener: migrar UserApp de `/ubicacion_burrito` a `/ubicacion_buses` | — |
-| Multi-bus render: mostrar múltiples buses en Mapbox | Multi-bus listener |
+Validación física in-situ dentro de la universidad y dentro del bus
+universitario. Requiere presencia física en el campus.
 
-**Impacto en la documentación:**
-- Al completarse, el nodo `/ubicacion_burrito` deja de utilizarse.
-- El simulador Python pierde utilidad como fuente de datos.
-- La limitación "un solo bus activo" se elimina de PROJECT_CONTEXT.
+| Orden | Tarea | Proyecto | Depende de |
+|-------|-------|----------|------------|
+| 1 | T4.3: Geofencing (validación real) — ajustar radios contra multipath de edificios | DriverApp | T4.3 impl (Bloque A) |
+| 2 | T5.1: Calibración de Paraderos — coordenadas GPS reales de los 10 paraderos | UserApp | — |
+| 3 | T5.2: Smoothing (ajuste fino) — coeficientes contra datos reales del circuito | UserApp | T5.2 impl (Bloque A) |
 
-**Estado:** pendiente. Primera prioridad post-documentación.
+## 5. Tareas Diferidas
 
-## 4. Fase 2: Automatización de Recorridos
+| Tarea | Referencia | Motivo |
+|-------|-----------|--------|
+| T1.2: Eliminar Debug Panel | `Map.tsx:255-262` | Congelada por orden del desarrollador hasta pre-producción |
+| T2.3: Asegurar Credenciales de Firma | `gradle.properties` en ambas apps | Diferida hasta empaquetar v1.2.0 |
 
-Incorporar lógica de geofencing y control de turnos para automatizar
-la apertura y cierre de recorridos sin intervención manual del conductor.
-
-**Tareas incluidas:**
-
-| Tarea | Depende de |
-|-------|-----------|
-| Control de turnos: crear nodo `/recorridos` con inicio/cierre | Fase 1 |
-| Geofencing: activar Haversine con Punto Cero y umbral de 40m | Control de turnos |
-
-**Nota:** la función `calculateDistance()` (Haversine) ya existe en
-`Map.tsx` pero no está activa en el flujo de tracking. Su activación
-requiere que el flujo de datos esté consolidado (Fase 1).
-
-**Estado:** pendiente. Depende de Fase 1.
-
-## 5. Fase 3: Monitoreo de Flota
-
-Construir un panel de monitoreo para visualizar el estado de todos los
-buses en tiempo real y acceder a estadísticas operativas.
-
-**Tareas incluidas:**
-
-| Tarea | Depende de |
-|-------|-----------|
-| Monitor de flota: mapa con todos los buses activos | Fase 1 |
-| Estadísticas: métricas de recorridos, tiempos, distancia | Fase 2 |
-
-**Estado:** pendiente. Depende de Fases 1 y 2.
-
-## 6. Fase 4: Preparación para Producción
-
-Asegurar que el sistema cumpla con los requisitos de seguridad,
-rendimiento y empaquetado para un lanzamiento oficial.
-
-**Tareas incluidas:**
-
-| Tarea | Descripción |
-|-------|-------------|
-| Firebase Rules | Configurar reglas de seguridad en RTDB (`.read`, `.write`, `.indexOn`) |
-| Variables de entorno | Migrar tokens a perfiles seguros (revisar `gradle.properties`) |
-| Firma AAB | Configurar almacén de llaves de producción y generar Android App Bundle |
-| Smoothing | Algoritmo de interpolación para suavizar movimiento del marcador |
-| Timeout check | Validador de inactividad para ocultar buses desconectados |
-| Testing | Ampliar cobertura de pruebas (Haversine, stores, flujos críticos) |
-
-**Estado:** puede ejecutarse en paralelo con Fases 1-3, pero requiere
-que el flujo principal esté estable antes del lanzamiento.
-
-## 7. Tareas Diferidas (sin prioridad actual)
-
-Funcionalidades reconocidas pero que el equipo ha decidido no priorizar
-en el corto plazo. Marcadas como "NO TOCAR" en la base de código.
-
-| Tarea | Referencia en código |
-|-------|---------------------|
-| Debug panel | `Map.tsx`: `setDebugLogs`, `styles.debugPanel` (comentado) |
-| Heartbeat independiente | `SendCoordinates.tsx`: watchdog cleanup (rama `task/T04-driver-heartbeat` sin mergear) |
-| Calibración de GPS | Sin implementación |
-
-**Estado:** diferido. Sin fecha estimada.
-
-## 8. Visión de Largo Plazo
+## 6. Visión de Largo Plazo
 
 Iniciativas identificadas que no forman parte del roadmap activo pero
 que representan la dirección futura del proyecto.
@@ -123,22 +74,14 @@ que representan la dirección futura del proyecto.
 
 **Estado:** ideas registradas. Sin prioridad ni fecha asignada.
 
-Estas iniciativas representan la dirección futura del ecosistema y
-podrán incorporarse al roadmap activo cuando finalicen las fases
-actuales.
-
-## 9. Dependencias entre Fases
+## 7. Dependencias entre Bloques
 
 ```
-Fase Actual (Documentación)
+Tareas Completadas (T1.1, T2.1, T2.2, T3.1)
     ↓
-Fase 1 (Multi-bus) ← sin esto, el resto no tiene base
+Bloque A (Casa/Calle) ← implementación desde casa
     ↓
-Fase 2 (Geofencing + Turnos) ← necesita tracking consolidado
-    ↓
-Fase 3 (Monitoreo) ← necesita multi-bus y recorridos
-    ↓
-Fase 4 (Preparación Producción) ← paralelizable, pero requiere estabilidad
+Bloque B (Campus UNMSM) ← validación física en campus
 
 Tareas Diferidas ← sin fecha
 Visión Largo Plazo ← sin prioridad

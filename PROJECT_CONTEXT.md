@@ -10,13 +10,14 @@ El problema que resuelve es de **asimetría de información**: los estudiantes e
 
 Estado del proyecto
 
-El proyecto se encuentra actualmente en una fase de consolidación documental.
-
-La infraestructura principal (Firebase, autenticación, tracking GPS y
-Background Service) ya funciona de forma estable.
+El proyecto se encuentra en la fase de desarrollo Casa/Calle (Bloque A).
+La infraestructura principal (Firebase, autenticación, tracking GPS,
+Background Service, route guard por rol, reglas de seguridad RBAC,
+testing unitario y listener multi-bus) ya está implementada y operativa.
 
 Las siguientes iteraciones se enfocan en funcionalidades de flota
-(multi-bus, geofencing, dashboard y estadísticas) descritas en ROADMAP.md.
+(heartbeat, timeout, turnos, render multi-marcador, monitor, estadísticas,
+geofencing y smoothing) descritas en TAREAS.txt y ROADMAP.md.
 
 
 El sistema está compuesto por dos aplicaciones móviles independientes:
@@ -67,22 +68,31 @@ Firebase Realtime Database actúa como el bus de datos. La UserApp nunca escribe
 - Autenticación de estudiantes (email/contraseña y Google Sign-In).
 - Asignación de conductores a buses mediante panel administrativo.
 - Captura de coordenadas GPS y transmisión continua a Firebase, incluso con la app en segundo plano.
-- Recepción en tiempo real de la ubicación del bus en la aplicación del estudiante mediante Mapbox. 
-Actualmente la aplicación utiliza la implementación de seguimiento para una única unidad.
-La arquitectura multi-bus forma parte de la evolución planificada del sistema; la migración al listener multi-bus forma parte de la Tarea 4.1 del roadmap (TOMAR EN CUENTA PARA FUTURAS REVISIONES)
+- Recepción en tiempo real de la ubicación de todos los buses activos en
+  la aplicación del estudiante mediante Mapbox. El backend de tracking
+  multi-bus está implementado (T3.1): el store de Zustand almacena las
+  posiciones como `Record<string, BurritoLocation>` indexado por placa,
+  con filtro de deduplicación y clasificación moving/stopped/offline
+  independiente por cada bus. La UI actualmente muestra un solo marcador
+  (seleccionando el bus activo más reciente); el render multi-marcador
+  completo está planificado en T4.4.
 - Interfaz administrativa para gestionar conductores, buses y asignaciones.
 - Dark mode en la app de estudiantes.
 - Compatibilidad con Android 14 (API 34), incluyendo soporte para Foreground Services de tipo location. Este soporte utiliza foregroundServiceType: location requerido por Android para servicios de ubicación en primer plano.
   `foregroundServiceType: location` requerido por el sistema operativo.
 - Feedback de estudiantes mediante formulario de comentarios.
 
-### Funcionalidades pendientes (ver ROADMAP.md)
+### Funcionalidades pendientes (ver TAREAS.txt y ROADMAP.md)
 
-- Listener multi-bus (soportar múltiples buses simultáneos en el mapa).
-- Geofencing y cierre automático de vueltas (varias tareas del roadmap).
-- Control de turnos (inicio/fin de recorrido con registro en base de datos).
-- Dashboard y estadísticas de flota.
-- Indicadores de estado en el mapa (activo, detenido, sin conexión).
+- Heartbeat (mantener timestamp fresco en buses detenidos — T4.1).
+- Timeout check (ocultar buses fantasma tras inactividad — T5.3).
+- Control de turnos (inicio/fin de recorrido — T4.2).
+- Render multi-marcador completo en el mapa (T4.4).
+- Monitor de flota en panel admin (T4.5).
+- Estadísticas de recorridos (T4.6).
+- Geofencing con cierre automático de vueltas (T4.3).
+- Smoothing de interpolación visual (T5.2).
+- Calibración de paraderos en campus (T5.1).
 
 ## 5. Limitaciones Actuales
 
@@ -93,7 +103,7 @@ La arquitectura multi-bus forma parte de la evolución planificada del sistema; 
 - **Solo Android para conducción**: el Foreground Service que mantiene
   la transmisión activa está implementado sobre APIs nativas de Android.
   DriverApp no está probada ni soportada en iOS.
-- **Seguimiento de un único bus**: La UserApp utiliza actualmente el listener legado para una única fuente de ubicación. El soporte para múltiples buses simultáneos forma parte de la Tarea 4.1 del roadmap (VER A FUTURO)
+- **Render de un solo marcador**: el backend multi-bus ya está implementado (T3.1), pero la UI del mapa aún muestra un único marcador (seleccionando el bus activo más reciente). El render multi-marcador completo está planificado en T4.4.
 
 ## 6. Documentación Relacionada
 

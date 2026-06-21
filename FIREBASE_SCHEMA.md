@@ -51,7 +51,7 @@ transformación.
 
 | Nodo | Tipo de clave | Ejemplo |
 |------|--------------|---------|
-| `/ubicacion_burrito` | Fija (único bus) | — |
+| `/ubicacion_burrito` | Heredado (único bus, ya no se usa) | — |
 | `/ubicacion_buses/{placa}` | Placa del bus | `ABC-123` |
 | `/choferes/{dni}` | DNI del conductor | `12345678` |
 | `/buses/{placa}` | Placa del bus | `ABC-123` |
@@ -61,49 +61,21 @@ transformación.
 
 ## 3. Nodos de Tracking
 
-Actualmente existen dos nodos relacionados con el seguimiento de
-ubicación debido al estado evolutivo del proyecto.
+Actualmente el sistema utiliza un único nodo de tracking consolidado
+(`/ubicacion_buses/{placa}`). El nodo heredado `/ubicacion_burrito`
+ya no se usa desde la migración multi-bus (T3.1).
 
-### `/ubicacion_burrito`
+### `/ubicacion_buses/{placa}` (activo)
 
-- **Propósito**: fuente de datos para el mapa en la UserApp. Contiene
-  la posición en vivo de un bus.
-- **Escritura**: script Python `simulador_burrito.py` (vía Admin SDK).
-- **Lectura**: UserApp, mediante listener continuo en
-  `map_service.ts` que alimenta `burritoLocationStore`.
-- **Estructura**:
-
-```json
-{
-  "ubicacion_burrito": {
-    "latitude": -12.056,
-    "longitude": -77.084,
-    "heading": 180,
-    "speed": 0,
-    "timestamp": 1718000000000,
-    "isActive": true
-  }
-}
-```
-
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `latitude` | number | Coordenada del GPS |
-| `longitude` | number | Coordenada del GPS |
-| `heading` | number | Rumbo en grados (0–360) |
-| `speed` | number | Velocidad (sin unidad definida) |
-| `timestamp` | number | Unix epoch ms (generado en el origen) |
-| `isActive` | boolean | Heartbeat operativo del bus |
-
-### `/ubicacion_buses/{placa}`
-
-- **Propósito**: recepción de coordenadas desde la DriverApp física.
-  Cada bus tiene una entrada propia identificada por su placa.
+- **Propósito**: nodo único de tracking. Contiene la posición en vivo
+  de todos los buses activos, cada uno identificado por su placa.
 - **Escritura**: DriverApp mediante `firebase_service.ts`
   (`updateBusLocation`/`stopBusService`). También se inicializa desde
   `admin_service.ts` al crear un bus nuevo.
-- **Lectura**: ningún componente consume este nodo actualmente (enlace
-  planificado).
+- **Lectura**: UserApp, mediante listener continuo en
+  `map_service.ts` (`subscribeToBusLocations()`) sobre el path
+  `/ubicacion_buses`, que alimenta `burritoLocationStore` con un
+  `Record<string, BurritoLocation>` indexado por placa (T3.1).
 - **Estructura** (payload de tracking):
 
 ```json
@@ -267,10 +239,14 @@ no se elimina.
 | `rol` | string | `estudiante` o `admin` |
 | `ultimaConexion` | number | ServerValue.TIMESTAMP del último login |
 
-**Nota sobre roles**: el rol se almacena en RTDB pero actualmente el
-único gating en UI es la visibilidad del enlace "Panel de Gestión" en
-el CustomDrawer (solo cuando `rol === 'admin'`). No existe un gating
-de rutas en el navegador basado en rol.
+**Nota sobre roles**: el rol se almacena en RTDB. El gating se
+implementa en dos niveles:
+1. **Gating visual**: el enlace "Panel de Gestión" solo se muestra en
+   el CustomDrawer cuando `rol === 'admin'`.
+2. **Gating de rutas**: las pantallas administrativas
+   (`AdminPanelScreen`, `ChoferesScreen`, `BusesScreen`,
+   `AsignacionesScreen`) solo se registran en `StackNavigator.tsx`
+   cuando `rol === 'admin'` (T1.1).
 
 ## 6. Nodos de Feedback
 
@@ -310,9 +286,9 @@ de rutas en el navegador basado en rol.
 
 ## 7. Estado del Esquema
 
-Actualmente el esquema se encuentra en proceso de consolidación. Existen
-nodos que forman parte del flujo definitivo y otros que pertenecen a
-etapas anteriores del proyecto.
+El esquema se encuentra consolidado tras la migración multi-bus (T3.1).
+El nodo heredado `/ubicacion_burrito` ya no se utiliza; todo el
+tracking fluye a través de `/ubicacion_buses/{placa}`.
 
 ### Nodos activos (flujo actual)
 
@@ -323,8 +299,8 @@ etapas anteriores del proyecto.
 | `/buses` | Definitivo | Se mantiene. |
 | `/usuarios` | Definitivo | Se mantiene. |
 | `/comentarios` | Provisional | Sin cambios previstos inmediatos. |
-| `/ubicacion_burrito` | Heredado | Será reemplazado. Dejará de usarse cuando se implemente el listener multi-bus. |
-| `/ubicacion_buses` | En transición | Nodo destino para el tracking definitivo. La DriverApp ya escribe aquí. La UserApp lo consumirá cuando se implemente el multi-bus listener. |
+| `/ubicacion_buses` | Definitivo | Nodo único de tracking. La UserApp lo consume vía `map_service.ts` (T3.1). |
+| `/ubicacion_burrito` | Heredado | Ya no se usa. Nodo legacy que puede eliminarse en una limpieza futura de la RTDB. |
 
 ### Nodos planificados (no existen en RTDB)
 
@@ -393,7 +369,6 @@ hardcodeados.
 
 | Nodo | .read | .write | Notas |
 |------|-------|--------|-------|
-| `/ubicacion_burrito` | `true` | — (denegado por defecto) | Legacy, lectura pública |
 | `/usuarios/{uid}` | Solo dueño | Solo dueño | Perfil personal |
 | `/comentarios` | `false` | `auth != null` | Solo escritura, lectura desde Consola |
 | `/asignaciones` | `auth != null` | Solo admin | DriverApp necesita lectura, admin escribe |
