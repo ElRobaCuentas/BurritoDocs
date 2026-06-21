@@ -288,9 +288,15 @@ necesita un flujo de autenticación y un alcance de datos distinto.
   niveles: gating visual (menú admin condicional en CustomDrawer) y
   gating de rutas (pantallas admin envueltas en `rol === 'admin'`
   en StackNavigator).
+- En **T2.1** se añadió un tercer nivel: **gating a nivel de
+  servidor** mediante Firebase Security Rules con RBAC. La regla
+  `root.child('usuarios').child(auth.uid).child('rol').val() === 'admin'`
+  protege los nodos `/choferes`, `/buses` y la escritura en
+  `/asignaciones`, reemplazando el UID de administrador hardcodeado
+  que se usaba anteriormente.
 
 **Referencias:** ARCHITECTURE.md (sección 3 y 4), FIREBASE_SCHEMA.md
-(sección 5).
+(sección 5 y 9).
 
 ---
 

@@ -373,7 +373,55 @@ Console. No existen archivos de reglas en el repositorio. Si la regla
 no está definida, la consulta desde DriverApp fallará en producción con
 un error de permiso o advertencia de cliente no optimizado.
 
-## 9. Referencias Cruzadas
+## 9. Reglas de Seguridad y Mínimo Privilegio (RBAC)
+
+El acceso a cada nodo de RTDB se controla mediante **Firebase Security
+Rules** basadas en el rol del usuario autenticado (RBAC). El
+mecanismo central de autorización es la validación del campo `rol` en
+el perfil del usuario dentro de RTDB:
+
+```
+root.child('usuarios').child(auth.uid).child('rol').val() === 'admin'
+```
+
+Esta expresión verifica que el usuario autenticado tenga
+`rol: "admin"` en `/usuarios/{uid}/rol`. Cualquier usuario con ese
+rol tiene permisos administrativos, eliminando la necesidad de UIDs
+hardcodeados.
+
+### Tabla de permisos por nodo
+
+| Nodo | .read | .write | Notas |
+|------|-------|--------|-------|
+| `/ubicacion_burrito` | `true` | — (denegado por defecto) | Legacy, lectura pública |
+| `/usuarios/{uid}` | Solo dueño | Solo dueño | Perfil personal |
+| `/comentarios` | `false` | `auth != null` | Solo escritura, lectura desde Consola |
+| `/asignaciones` | `auth != null` | Solo admin | DriverApp necesita lectura, admin escribe |
+| `/ubicacion_buses` | `true` | `auth != null` | Lectura pública, escritura conductores (MVP) |
+| `/choferes` | Solo admin | Solo admin | Gestión exclusiva de administradores |
+| `/buses` | Solo admin | Solo admin | Gestión exclusiva de administradores |
+
+### Riesgos residuales aceptados (MVP)
+
+1. **Escritura en `/ubicacion_buses`**: cualquier usuario autenticado
+   puede escribir coordenadas en cualquier bus. No hay verificación de
+   que el conductor esté asignado al bus. La mejora futura (restringir
+   escritura solo al conductor asignado) está planificada.
+2. **Lectura en `/ubicacion_buses`**: es pública (`true`). Cualquier
+   persona con la URL de la base de datos puede leer ubicaciones en
+   vivo.
+3. **Escritura en `/comentarios`**: solo se exige autenticación. No hay
+   rate limiting ni validación del contenido.
+
+### Mejora planificada (Fase 4/5)
+
+Restringir la escritura en `/ubicacion_buses/{placa}` para que solo el
+conductor asignado al bus (según `/asignaciones`) pueda escribir
+coordenadas. Esto requiere una regla que cruce
+`root.child('asignaciones')` con el UID o DNI del conductor
+autenticado.
+
+## 10. Referencias Cruzadas
 
 | Documento | Relación |
 |-----------|----------|
