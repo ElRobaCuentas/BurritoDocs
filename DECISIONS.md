@@ -249,7 +249,7 @@ manifest, permisos y opciones de JS.
 
 ### ADR-009: Autenticación segmentada por roles
 
-**Estado:** Aceptada.
+**Estado:** Aceptada. Parcialmente reemplazada por ADR-017.
 
 **Contexto:**
 
@@ -288,12 +288,10 @@ necesita un flujo de autenticación y un alcance de datos distinto.
   niveles: gating visual (menú admin condicional en CustomDrawer) y
   gating de rutas (pantallas admin envueltas en `rol === 'admin'`
   en StackNavigator).
-- En **T2.1** se añadió un tercer nivel: **gating a nivel de
-  servidor** mediante Firebase Security Rules con RBAC. La regla
-  `root.child('usuarios').child(auth.uid).child('rol').val() === 'admin'`
-  protege los nodos `/choferes`, `/buses` y la escritura en
-  `/asignaciones`, reemplazando el UID de administrador hardcodeado
-  que se usaba anteriormente.
+- **Nota**: este modelo de autorización por `/usuarios/{uid}/rol` fue
+  reemplazado por el modelo de membresía en `/administradores/{auth.uid}`
+  (ver ADR-017). El campo `rol` en `/usuarios` ahora solo almacena
+  `'estudiante'` y ya no participa en autorización.
 
 **Referencias:** ARCHITECTURE.md (sección 3 y 4), FIREBASE_SCHEMA.md
 (sección 5 y 9).
@@ -367,6 +365,11 @@ permanece intacta.
 - El código usa inicialización lazy: si la app secundaria no existe,
   la crea con `firebase.initializeApp(config, 'SecondaryApp')`.
 - El service account key (`serviceAccountKey.json`) es gitignored.
+- **Riesgo identificado y corregido (ADR-018)**: `initializeApp()`
+  es asíncrono y retorna `Promise<FirebaseApp>`. El código original
+  no usaba `await`, por lo que `secondaryApp` recibía una Promise en
+  lugar del objeto FirebaseApp. Se corrigió con `await` en
+  `admin_service.ts:79`.
 
 **Referencias:** ARCHITECTURE.md (sección 4, módulo admin),
 FIREBASE_SCHEMA.md (sección 4).
@@ -459,6 +462,131 @@ por bus en T4.4.
 
 **Referencias:** ARCHITECTURE.md (sección 4 y 5), FIREBASE_SCHEMA.md
 (secciones 3 y 7), TAREAS.txt (T3.1, T4.4).
+
+---
+
+### ADR-017: Migración del panel admin a DriverApp + autorización por auth.uid
+
+**Estado:** Aceptada.
+
+**Contexto:**
+
+La UserApp (El Burrito) se atasca en el spinner de Mapbox cuando la
+base de datos está limpia (sin asignaciones activas). El spinner es
+intencional y no se modifica. El deadlock real es de arquitectura: el
+Panel de Gestión vivía en la UserApp y solo se alcanzaba por el drawer
+que el spinner bloqueaba — sin asignaciones → la DriverApp no transmite
+→ la UserApp nunca recibe datos → spinner infinito.
+
+Además, el modelo de autorización admin basado en `rol` dentro de
+`/usuarios/{uid}` era vulnerable: la regla de escritura del propio
+usuario sobre su nodo permitía auto-asignarse `rol: 'admin'`.
+
+**Decisión:**
+
+1. Migrar el módulo admin (`features/admin/`) completo de la UserApp a
+   la DriverApp. La UserApp queda como cliente exclusivo de estudiantes.
+2. Crear un nuevo nodo `/administradores/{auth.uid}` como fuente única
+   de verdad de autorización admin. La mera existencia de la clave
+   (`snapshot.exists()`) define que el UID es administrador. No se usa
+   ni se lee un campo `rol`.
+3. El enrutador de DriverApp consulta `existeAdministrador(user.uid)`
+   post-login para decidir si renderiza el AdminNavigator o envía al
+   conductor a SendCoordinates.
+4. Las reglas de RTDB se reescriben para usar el predicado
+   `root.child('administradores').child(auth.uid).exists()` en lugar de
+   `root.child('usuarios').child(auth.uid).child('rol').val() === 'admin'`.
+5. El nodo `/administradores` tiene `.write: false` — solo se puebla
+   manualmente desde Firebase Console.
+
+**Alternativas consideradas:**
+
+- Modelo por email (`auth.token.email.replace('@burritodriver.com', '')`
+  como clave en `/administradores`): descartado por ser explotable
+  mediante registro público con email arbitrario.
+- Mantener `/usuarios/{uid}/rol` como fuente admin: descartado por ser
+  auto-escribible.
+- Custom Claims de Firebase Auth: descartado por requerir Admin SDK o
+  Cloud Functions (no hay backend propio).
+
+**Consecuencias:**
+
+- La UserApp ya no tiene dependencia del panel admin. Su único propósito
+  es mostrar el mapa al estudiante.
+- La DriverApp ahora tiene dos modos de operación: admin (panel de
+  gestión) y conductor (tracking).
+- El administrador se identifica por su Auth UID, no por DNI ni email.
+  El bootstrap requiere crear la cuenta Auth → copiar UID → poblar
+  `/administradores/{uid}` manualmente.
+- El campo `rol` en `/usuarios/{uid}` queda inerte como legado, siempre
+  con valor `'estudiante'`.
+- Se agregaron 6 archivos nuevos en DriverApp, se modificaron 3 archivos
+  en DriverApp, se eliminaron 5 archivos en UserApp, se modificaron 3
+  archivos en UserApp.
+
+**Referencias:** ARCHITECTURE.md (sección 3), FIREBASE_SCHEMA.md
+(secciones 4, 9), TAREAS.txt (TA.1, TA.2, TA.3, TA.4).
+
+---
+
+### ADR-018: Corrección de inicialización asíncrona de SecondaryApp
+
+**Estado:** Aceptada.
+
+**Contexto:**
+
+Durante la migración del panel admin a la DriverApp (ADR-017), la
+función `createChofer()` en `admin_service.ts` fallaba con el error:
+`"firebase.auth(app)" arg expects a FirebaseApp instance or undefined`.
+
+La causa era que `firebase.initializeApp()` en `@react-native-firebase/app`
+v23.8.8 retorna `Promise<ReactNativeFirebase.FirebaseApp>`, no el objeto
+`FirebaseApp` directamente. El código original asignaba el resultado sin
+`await`:
+
+```typescript
+secondaryApp = firebase.initializeApp(config, 'SecondaryApp');
+// secondaryApp = Promise ❌, no FirebaseApp
+```
+
+Posteriormente, `auth(secondaryApp)` ejecutaba un duck-type check interno
+del SDK (`namespace.ts:163-168`) que verificaba `'name' in _app`. Una
+Promise no tiene propiedad `name`, por lo que el check fallaba.
+
+**Decisión:**
+
+Agregar `await` a la llamada de `initializeApp()` y tipar correctamente
+la variable `secondaryApp`:
+
+```typescript
+let secondaryApp: ReactNativeFirebase.FirebaseApp;
+try {
+  secondaryApp = firebase.app('SecondaryApp');
+} catch (e) {
+  secondaryApp = await firebase.initializeApp(config, 'SecondaryApp');
+}
+```
+
+**Alternativas consideradas:**
+
+- Mantener `any` y confiar en el try/catch para reintentar: descartado
+  porque enmascara el error de tipos.
+- Usar `.then()` en lugar de `await`: equivalente funcional pero menos
+  legible en un flujo ya async.
+
+**Consecuencias:**
+
+- `secondaryApp` recibe correctamente un `FirebaseApp` en lugar de una
+  Promise.
+- El duck-type check de `auth()` pasa exitosamente.
+- La creación de choferes funciona en el primer intento (ya no requiere
+  un segundo intento gracias al registro síncrono en `APP_REGISTRY`).
+- TypeScript ahora detectaría el error si se omitiera el `await` (la
+  variable está tipada como `FirebaseApp`, no como `any`).
+- Se modificó 1 archivo (`admin_service.ts`), 3 líneas en total.
+
+**Referencias:** ARCHITECTURE.md (sección 3, módulo admin),
+TROUBLESHOOTING.md (sección 10), admin_service.ts.
 
 ---
 

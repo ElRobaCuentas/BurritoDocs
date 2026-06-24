@@ -58,6 +58,7 @@ transformación.
 | `/asignaciones/{pushId}` | Push ID generado por Firebase | `-Nx9...` |
 | `/usuarios/{uid}` | Auth UID de Firebase | `abc123...` |
 | `/comentarios/{pushId}` | Push ID generado por Firebase | `-Ny8...` |
+| `/administradores/{auth.uid}` | Auth UID de Firebase | `def456...` |
 
 ## 3. Nodos de Tracking
 
@@ -122,9 +123,9 @@ administrativo, se escribe `{ isActive: false }` en
 
 - **Propósito**: catálogo de conductores. Cada clave es el DNI del
   conductor.
-- **Escritura**: `admin_service.createChofer()`.
+- **Escritura**: `admin_service.createChofer()` (desde DriverApp).
 - **Lectura**: `admin_service.subscribeToChoferes()` (listener continuo
-  desde UserApp).
+  desde DriverApp, panel admin).
 - **Estructura**:
 
 ```json
@@ -148,9 +149,9 @@ contraseña igual al DNI. Usa una instancia secundaria de Auth
 
 - **Propósito**: catálogo de buses. Cada clave es la placa del vehículo
   en mayúsculas.
-- **Escritura**: `admin_service.createBus()`.
+- **Escritura**: `admin_service.createBus()` (desde DriverApp).
 - **Lectura**: `admin_service.subscribeToBuses()` (listener continuo
-  desde UserApp).
+  desde DriverApp, panel admin).
 - **Estructura**:
 
 ```json
@@ -173,9 +174,9 @@ contraseña igual al DNI. Usa una instancia secundaria de Auth
 
 - **Propósito**: relación temporal entre un conductor y un bus para un
   turno diario. Clave generada por `push()` de Firebase.
-- **Escritura**: `admin_service.createAsignacion()`.
+- **Escritura**: `admin_service.createAsignacion()` (desde DriverApp).
 - **Lectura**: `admin_service.subscribeToAsignacionesHoy()` (listener
-  continuo desde UserApp) y DriverApp (consulta puntual con
+  continuo desde DriverApp) y DriverApp (consulta puntual con
   `orderByChild('choferId')`).
 - **Estructura**:
 
@@ -205,6 +206,46 @@ la misma fecha.
 
 **Cancelación**: al cancelar, se establece `activo: false`. El registro
 no se elimina.
+
+### `/administradores/{auth.uid}` (nuevo)
+
+- **Propósito**: fuente única de verdad para autorización administrativa.
+  Cada clave es el UID de Firebase Auth del administrador. La mera
+  existencia de la clave (`snapshot.exists()`) define que el usuario es
+  administrador. **No existe ni se lee un campo `rol`**.
+- **Escritura**: exclusivamente manual desde Firebase Console. Las reglas
+  de RTDB tienen `.write: false` sobre este nodo.
+- **Lectura**: DriverApp — `admin_check.ts` (`existeAdministrador(uid)`)
+  para el enrutador post-login. RTDB Security Rules — para el predicado
+  admin en todos los nodos administrativos.
+- **Estructura**:
+
+```json
+{
+  "administradores": {
+    "abcDef123456UidAdmin": true
+  }
+}
+```
+
+El valor mínimo es `true` (RTDB no permite valores nulos).
+Opcionalmente puede almacenar `{ nombre, dni }` para trazabilidad:
+
+```json
+{
+  "administradores": {
+    "abcDef123456UidAdmin": {
+      "nombre": "Admin UNMSM",
+      "dni": "77777777"
+    }
+  }
+}
+```
+
+**Propiedad del nodo**: la DriverApp (admin) escribe/lee los nodos de
+gestión (`/choferes`, `/buses`, `/asignaciones`). La UserApp ya no
+consulta ni escribe en estos nodos. El administrador accede al panel
+exclusivamente desde la DriverApp.
 
 ## 5. Nodos de Autenticación
 
@@ -236,17 +277,14 @@ no se elimina.
 | `nombre` | string | Nombre del estudiante |
 | `avatar` | string | Facultad: `ingeniero`, `salud`, `economista`, `humanidades` |
 | `email` | string | Email registrado en Firebase Auth |
-| `rol` | string | `estudiante` o `admin` |
+| `rol` | string | Siempre `estudiante`. El valor `admin` fue deprecado. |
 | `ultimaConexion` | number | ServerValue.TIMESTAMP del último login |
 
-**Nota sobre roles**: el rol se almacena en RTDB. El gating se
-implementa en dos niveles:
-1. **Gating visual**: el enlace "Panel de Gestión" solo se muestra en
-   el CustomDrawer cuando `rol === 'admin'`.
-2. **Gating de rutas**: las pantallas administrativas
-   (`AdminPanelScreen`, `ChoferesScreen`, `BusesScreen`,
-   `AsignacionesScreen`) solo se registran en `StackNavigator.tsx`
-   cuando `rol === 'admin'` (T1.1).
+**Nota sobre roles**: el campo `rol` en `/usuarios/{uid}` fue deprecado
+como fuente de autorización administrativa por ser auto-escribible por el
+propio usuario (regla `.write` del dueño sobre su propio nodo). La nueva
+fuente única de verdad es `/administradores/{auth.uid}`, que es inmutable
+desde el cliente (`.write: false`).
 
 ## 6. Nodos de Feedback
 
@@ -286,21 +324,23 @@ implementa en dos niveles:
 
 ## 7. Estado del Esquema
 
-El esquema se encuentra consolidado tras la migración multi-bus (T3.1).
-El nodo heredado `/ubicacion_burrito` ya no se utiliza; todo el
-tracking fluye a través de `/ubicacion_buses/{placa}`.
+El esquema se encuentra consolidado tras la migración multi-bus (T3.1)
+y la migración del panel admin a DriverApp (FASE 1-5). El nodo heredado
+`/ubicacion_burrito` ya no se utiliza; todo el tracking fluye a través
+de `/ubicacion_buses/{placa}`.
 
 ### Nodos activos (flujo actual)
 
-| Nodo | Estado | Evolución prevista |
-|------|--------|-------------------|
-| `/asignaciones` | Definitivo | Se mantiene. Posible adición de índices. |
-| `/choferes` | Definitivo | Se mantiene. |
-| `/buses` | Definitivo | Se mantiene. |
-| `/usuarios` | Definitivo | Se mantiene. |
-| `/comentarios` | Provisional | Sin cambios previstos inmediatos. |
-| `/ubicacion_buses` | Definitivo | Nodo único de tracking. La UserApp lo consume vía `map_service.ts` (T3.1). |
-| `/ubicacion_burrito` | Heredado | Ya no se usa. Nodo legacy que puede eliminarse en una limpieza futura de la RTDB. |
+| Nodo | Estado | Propietario | Evolución prevista |
+|------|--------|-------------|-------------------|
+| `/asignaciones` | Definitivo | DriverApp (admin) | Se mantiene. |
+| `/choferes` | Definitivo | DriverApp (admin) | Se mantiene. |
+| `/buses` | Definitivo | DriverApp (admin) | Se mantiene. |
+| `/administradores` | Definitivo | Firebase Console | Se mantiene. Solo escritura manual. |
+| `/usuarios` | Definitivo | UserApp | Se mantiene. |
+| `/comentarios` | Provisional | UserApp | Sin cambios previstos inmediatos. |
+| `/ubicacion_buses` | Definitivo | DriverApp (conductor) | Nodo único de tracking. |
+| `/ubicacion_burrito` | Heredado | — | Ya no se usa. Nodo legacy. |
 
 ### Nodos planificados (no existen en RTDB)
 
@@ -351,19 +391,26 @@ un error de permiso o advertencia de cliente no optimizado.
 
 ## 9. Reglas de Seguridad y Mínimo Privilegio (RBAC)
 
+### Modelo de autorización admin (post-migración)
+
 El acceso a cada nodo de RTDB se controla mediante **Firebase Security
-Rules** basadas en el rol del usuario autenticado (RBAC). El
-mecanismo central de autorización es la validación del campo `rol` en
-el perfil del usuario dentro de RTDB:
+Rules** basadas en la membresía del auth.uid en el nodo
+`/administradores`. El predicado central de autorización admin es:
 
 ```
-root.child('usuarios').child(auth.uid).child('rol').val() === 'admin'
+root.child('administradores').child(auth.uid).exists()
 ```
 
-Esta expresión verifica que el usuario autenticado tenga
-`rol: "admin"` en `/usuarios/{uid}/rol`. Cualquier usuario con ese
-rol tiene permisos administrativos, eliminando la necesidad de UIDs
-hardcodeados.
+Esta expresión verifica que el UID del usuario autenticado exista como
+clave en `/administradores/`. A diferencia del modelo anterior
+(`/usuarios/{uid}/rol === 'admin'`), este predicado no es auto-escribible
+por el cliente porque `/administradores` tiene `.write: false`.
+
+**Fundamento**: el modelo por `rol` en `/usuarios/{uid}` fue descartado
+porque la regla de escritura del propio usuario sobre su nodo permitía
+auto-asignarse `rol: 'admin'`. `/administradores` es una fuente de
+verdad inmutable desde el cliente, poblada exclusivamente por consola
+de Firebase.
 
 ### Tabla de permisos por nodo
 
@@ -371,10 +418,23 @@ hardcodeados.
 |------|-------|--------|-------|
 | `/usuarios/{uid}` | Solo dueño | Solo dueño | Perfil personal |
 | `/comentarios` | `false` | `auth != null` | Solo escritura, lectura desde Consola |
+| `/administradores` | `auth != null` | `false` | Solo lectura. Escritura exclusiva desde Consola |
 | `/asignaciones` | `auth != null` | Solo admin | DriverApp necesita lectura, admin escribe |
-| `/ubicacion_buses` | `true` | `auth != null` | Lectura pública, escritura conductores (MVP) |
+| `/ubicacion_buses` | `true` | `auth != null` | Lectura pública, escritura conductores |
 | `/choferes` | Solo admin | Solo admin | Gestión exclusiva de administradores |
 | `/buses` | Solo admin | Solo admin | Gestión exclusiva de administradores |
+
+### Predicado admin en reglas
+
+```json
+"admin": "auth != null && root.child('administradores').child(auth.uid).exists()"
+```
+
+Este predicado reemplaza al anterior:
+```
+// ELIMINADO — vulnerable a auto-asignación:
+"auth != null && root.child('usuarios').child(auth.uid).child('rol').val() === 'admin'"
+```
 
 ### Riesgos residuales aceptados (MVP)
 
@@ -402,8 +462,8 @@ autenticado.
 |-----------|----------|
 | `PROJECT_CONTEXT.md` | Visión general del sistema, propósito y limitaciones. |
 | `ARCHITECTURE.md` | Flujo de datos, ciclo de vida del tracking y topología del ecosistema. |
-| `TROUBLESHOOTING.md` | Incidentes relacionados con Firebase: persistence, path mismatch, regresiones. |
-| `DECISIONS.md` | ADR sobre persistence desactivada, arquitectura serverless, punto cero dinámico. |
+| `TROUBLESHOOTING.md` | Incidentes relacionados con Firebase: persistence, path mismatch, regresiones, async initializeApp. |
+| `DECISIONS.md` | ADR sobre persistence desactivada, arquitectura serverless, migración admin, fix async initializeApp. |
 | BurritoDriverApp/README.md | Setup de Firebase, permisos Android y google-services.json. |
 | BurritoUserApp/README.md | Setup de Firebase, .env y google-services.json. |
 | `ROADMAP.md` | Fases y prioridades para la evolución del esquema. |

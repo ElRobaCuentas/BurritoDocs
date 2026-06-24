@@ -6,7 +6,7 @@ El sistema sigue el patrón **productor-consumidor** sobre una arquitectura
 **serverless** y **unidireccional**:
 
 ```
-DriverApp (productor) ──escribe──→ Firebase RTDB (bus) ──escucha──→ UserApp (consumidor)
+DriverApp (productor + operaciones) ──escribe──→ Firebase RTDB (bus) ──escucha──→ UserApp (consumidor)
 ```
 
 No hay backend intermedio. Firebase Realtime Database actúa como único bus
@@ -15,38 +15,41 @@ websockets nativos del SDK.
 
 ## 2. Arquitectura del Ecosistema
 
-### Roles
+### Separación de responsabilidades (post-migración)
 
-| Aplicación | Rol | Función principal |
-|-----------|-----|-------------------|
-| BurritoDriverApp | **Productor** | Capturar GPS y escribir a RTDB |
-| BurritoUserApp | **Consumidor** | Leer desde RTDB y renderizar en mapa |
-| Firebase RTDB | **Bus de datos** | Almacenar y sincronizar estado en vivo |
-| Firebase Auth | **Identidad** | Autenticar conductores y estudiantes |
+| Aplicación | Rol | Función principal | Autenticación |
+|-----------|-----|-------------------|---------------|
+| BurritoDriverApp | **Operador** (admin + conductor) | Capturar GPS, panel de gestión, enrutar según rol | DNI + contraseña (conductores), Auth UID (admin) |
+| BurritoUserApp | **Consumidor** (estudiante) | Leer desde RTDB y renderizar mapa | Email/contraseña o Google Sign-In |
+| Firebase RTDB | **Bus de datos** | Almacenar y sincronizar estado en vivo | — |
+| Firebase Auth | **Identidad** | Autenticar conductores y estudiantes | — |
 
 ### Flujo de datos
 
 ```
 ┌──────────────────┐    write     ┌──────────────────┐
 │   BurritoDriverApp │ ──────────→ │  Firebase RTDB   │
-│   (Android)        │             │                  │
-└──────────────────┘             │  /ubicacion_buses │
-                                  │  /asignaciones    │
-┌──────────────────┐             │  /choferes        │
-│   BurritoUserApp  │ ←────────── │  /buses           │
-│   (Android/iOS)   │    listen   │  /usuarios        │
-└──────────────────┘             │  /comentarios     │
-                                  └──────────────────┘
+│   (Operador)       │             │                  │
+│   ├─ Admin         │             │  /ubicacion_buses│
+│   └─ Conductor     │             │  /asignaciones   │
+└──────────────────┘             │  /choferes       │
+                                  │  /buses          │
+┌──────────────────┐             │  /usuarios       │
+│   BurritoUserApp  │ ←────────── │  /comentarios    │
+│   (Estudiante)    │    listen   │  /administradores│
+└──────────────────┘             └──────────────────┘
 ```
-
-
 
 ### Autenticación
 
-- **DriverApp**: Firebase Auth con email compuesto como `${dni}@burritodriver.com`.
-  Contraseña = DNI del conductor, establecida al crear el chofer desde el panel admin.
-- **UserApp**: Firebase Auth con email/contraseña (registro estándar) o Google Sign-In.
-  Detecta y redirige automáticamente según sesión activa.
+- **DriverApp (conductores)**: Firebase Auth con email compuesto como
+  `${dni}@burritodriver.com`. Contraseña = DNI del conductor, establecida
+  al crear el chofer desde el panel admin.
+- **DriverApp (admin)**: misma cuenta Auth (email/contraseña). El enrutador
+  post-login consulta `/administradores/{auth.uid}` para decidir si es
+  administrador o conductor.
+- **UserApp (estudiantes)**: Firebase Auth con email/contraseña (registro
+  estándar) o Google Sign-In.
 
 ### Separación de proyectos
 
@@ -57,26 +60,55 @@ y configuración nativa.
 
 ## 3. Arquitectura de BurritoDriverApp
 
-### Entry point
+### Entry point y enrutador
 
 ```
 index.js → src/DriverApp.tsx
 ```
 
 `DriverApp.tsx` monta un listener de `onAuthStateChanged`. Cuando hay
-sesión activa renderiza `SendCoordinates`, caso contrario `LoginDriverScreen`.
-No usa React Navigation.
+sesión activa, resuelve el rol del usuario consultando `/administradores/{auth.uid}`:
+
+```
+Login exitoso
+    ↓
+onAuthStateChanged → user detectado
+    ↓
+existeAdministrador(user.uid)?
+    ├── Sí → NavigationContainer + AdminNavigator (AdminPanelScreen)
+    └── No → SendCoordinates(driverDni)  ← tracking conductor existente
+```
+
+El estado `initializing=true` cubre tanto la carga inicial de Auth como la
+consulta a RTDB, eliminando flickers de navegación.
 
 ### Estructura de archivos
 
 ```
 src/
-├── DriverApp.tsx              # Entrypoint, auth gate
+├── DriverApp.tsx                    # Auth gate + enrutador tripartito
+├── navigation/
+│   └── AdminNavigator.tsx           # Stack navigator del panel admin
 ├── screen/
-│   ├── LoginDriverScreen.tsx  # Login con DNI + contraseña
-│   └── SendCoordinates.tsx    # Tracking, permisos, GPS
-└── services/
-    └── firebase_service.ts    # Escritura a RTDB
+│   ├── LoginDriverScreen.tsx        # Login con DNI + contraseña
+│   └── SendCoordinates.tsx          # Tracking, permisos, GPS
+├── features/
+│   └── admin/
+│       ├── screen/
+│       │   ├── AdminPanelScreen.tsx  # Menú principal del panel (+ botón Cerrar Sesión)
+│       │   ├── ChoferesScreen.tsx    # CRUD de conductores
+│       │   ├── BusesScreen.tsx       # CRUD de buses
+│       │   └── AsignacionesScreen.tsx # CRUD de asignaciones diarias
+│       └── services/
+│           ├── admin_service.ts      # CRUD contra RTDB con Auth secundario
+│           └── admin_check.ts        # existeAdministrador(uid): Promise<boolean>
+├── services/
+│   └── firebase_service.ts          # Escritura a RTDB (updateBusLocation)
+└── shared/
+    ├── config/firebase.ts           # firebaseDatabase + firebaseAuth
+    └── theme/
+        ├── colors.ts
+        └── typography.ts
 ```
 
 ### LoginDriverScreen
@@ -86,50 +118,60 @@ src/
   `auth().signInWithEmailAndPassword`.
 - Manejo de errores: red, credenciales inválidas, cuenta deshabilitada.
 
-### SendCoordinates (pantalla principal)
+### SendCoordinates (pantalla principal del conductor)
 
-Contiene la lógica completa de tracking:
+Contiene la lógica completa de tracking (sin cambios respecto a la
+arquitectura previa). Ver sección 8 para el ciclo detallado.
 
-1. **Al montar**: consulta `/asignaciones` con filtro `orderByChild('choferId').equalTo(driverDni)`
-   y valida client-side `fecha === today && activo === true`. Si encuentra asignación,
-   guarda `busId` en estado local.
+### Módulo Admin (nuevo en DriverApp)
 
-2. **Al presionar INICIAR**: solicita permisos Android (POST_NOTIFICATIONS,
-   ACCESS_FINE_LOCATION, ACCESS_BACKGROUND_LOCATION), luego inicia el
-   Foreground Service mediante `BackgroundJob.start()`.
+Accesible solo para usuarios cuyo `auth.uid` existe en `/administradores/`.
+CRUD completo contra RTDB:
 
-3. **Foreground Service**: ejecuta `locationTask`, que conecta
-   `Geolocation.watchPosition()` con callback cada ~3 segundos. En cada
-   pulso escribe a `/ubicacion_buses/{busId}` vía `updateBusLocation()`.
+| Entidad | Path | Operaciones |
+|---------|------|-------------|
+| Choferes | `/choferes/{dni}` | Crear (Auth + RTDB), listar, toggle activo |
+| Buses | `/buses/{placa}` | Crear + init `/ubicacion_buses/{placa}`, listar, toggle |
+| Asignaciones | `/asignaciones/{pushId}` | Crear con validación de exclusividad, listar, cancelar |
 
-4. **Al presionar DETENER**: detiene `BackgroundJob.stop()`, escribe
-   `{ isActive: false }` a `/ubicacion_buses/{busId}`, y cierra sesión
-   de Firebase Auth.
+Al crear un chofer, `admin_service.ts` usa una **instancia secundaria de
+Firebase Auth** (`SecondaryApp`) para no sobrescribir la sesión del admin
+actual.
 
-Payload escrito a RTDB en cada pulso:
-```
-/ubicacion_buses/{busId} {
-  latitude,    // float
-  longitude,   // float
-  heading,     // float
-  speed,       // float
-  timestamp,   // Date.now()
-  isActive: true
-}
+### admin_check.ts
+
+Función única exportada:
+
+```typescript
+existeAdministrador(uid: string): Promise<boolean>
 ```
 
-### Sistema de debug
+Consulta `/administradores/{uid}` con `once('value')` y retorna
+`snapshot.exists()`. Es la fuente de verdad tanto para el enrutador de
+DriverApp como para las reglas de RTDB.
 
-SendCoordinates incluye una consola visual de eventos mediante
-`DeviceEventEmitter` + `sendLog()`. Todos los eventos del ciclo de
-vida del tracking se emiten con timestamp y tipo (info, error, success)
-y se muestran en un ScrollView dentro de la misma pantalla. No tiene
-efecto en la lógica de negocio.
+### AdminNavigator
+
+Stack navigator simple que registra las 4 pantallas del panel:
+
+```typescript
+RootStackParams = {
+  AdminPanelScreen: undefined;
+  ChoferesScreen: undefined;
+  BusesScreen: undefined;
+  AsignacionesScreen: undefined;
+};
+```
+
+Sin sobreingeniería: un solo stack para la rama admin.
 
 ### Firebase Auth
 
 - `auth().onAuthStateChanged()` en DriverApp.tsx maneja la sesión global.
-- `auth().signOut()` al detener tracking.
+- El enrutador post-login deriva el destino de la sesión según la membresía
+  en `/administradores/{auth.uid}`.
+- `auth().signOut()` disponible desde AdminPanelScreen (botón "Cerrar
+  Sesión") y desde SendCoordinates (al detener tracking).
 
 ## 4. Arquitectura de BurritoUserApp
 
@@ -143,26 +185,21 @@ index.js → src/app/App.tsx
 offline/online según estado de la app, Google Sign-In config, splash
 animado y gating de hidratación.
 
-### Navegación
+### Navegación (post-poda)
 
 ```
 StackNavigator (root)
 ├── logged-out: Welcome → SignIn/SignUp → ForgotPassword → AvatarPicker
 └── logged-in:
-    ├── DrawerNavigator
-    │   └── MapScreen (única pantalla en el drawer)
-    ├── AdminPanelScreen (stack, role-gated)
-    ├── ChoferesScreen
-    ├── BusesScreen
-    └── AsignacionesScreen
+    └── DrawerNavigator
+        └── MapScreen (única pantalla en el drawer — sin rutas admin)
 ```
 
-El gating de autenticación es declarativo: `StackNavigator.tsx` renderiza
-distintos grupos de pantallas según `isLoggedIn` del store. Además, las
-pantallas de administración están envueltas en `rol === 'admin'`,
-añadiendo gating por rol sin route guards manuales.
+El gating de autenticación es declarativo. Ya no existen rutas
+administrativas ni gating por `rol === 'admin'`. El módulo admin fue
+eliminado completamente (ver FASE 4 de la migración).
 
-### Estructura de archivos
+### Estructura de archivos (post-poda)
 
 ```
 src/
@@ -170,33 +207,30 @@ src/
 │   ├── App.tsx                        # Entry point, Firebase offline/online
 │   ├── screen/AnimatedSplash.tsx      # Splash animado
 │   └── navigations/
-│       ├── StackNavigator.tsx         # Root navigator con auth gate
+│       ├── StackNavigator.tsx         # Root navigator con auth gate (sin admin)
 │       └── DrawerNavigator.tsx        # Menú lateral con MapScreen
 ├── features/
 │   ├── auth/screen/                   # Welcome, SignIn, SignUp, ForgotPassword, AvatarPicker
-│   ├── map/
-│   │   ├── screen/MapScreen.tsx       # Contenedor del mapa + overlay UI
-│   │   ├── components/
-│   │   │   ├── Map.tsx                # Mapbox canvas con marcadores, ruta y paraderos
-│   │   │   ├── CustomDrawer.tsx       # Menú lateral animado
-│   │   │   ├── FAB.tsx                # Botón flotante
-│   │   │   ├── StopCard.tsx           # Modal de información de paradero
-│   │   │   └── MapBranding.tsx        # Marca de agua del mapa
-│   │   ├── constants/
-│   │   │   ├── map_route.ts           # GeoJSON de ruta y paraderos
-│   │   │   └── mapTheme.ts            # Estilos oscuro/claro para Mapbox
-│   │   ├── services/map_service.ts    # Suscripción RTDB + feedback
-│   │   └── types.ts
-│   └── admin/
-│       ├── screen/                    # AdminPanel, Choferes, Buses, Asignaciones
-│       └── services/admin_service.ts  # CRUD contra RTDB con Auth secundario
+│   └── map/
+│       ├── screen/MapScreen.tsx       # Contenedor del mapa + overlay UI
+│       ├── components/
+│       │   ├── Map.tsx                # Mapbox canvas con marcadores, ruta y paraderos
+│       │   ├── CustomDrawer.tsx       # Menú lateral animado (sin botón admin)
+│       │   ├── FAB.tsx                # Botón flotante
+│       │   ├── StopCard.tsx           # Modal de información de paradero
+│       │   └── MapBranding.tsx        # Marca de agua del mapa
+│       ├── constants/
+│       │   ├── map_route.ts           # GeoJSON de ruta y paraderos
+│       │   └── mapTheme.ts            # Estilos oscuro/claro para Mapbox
+│       ├── services/map_service.ts    # Suscripción RTDB + feedback
+│       └── types.ts
 ├── shared/
 │   ├── config/firebase.ts             # Instancia compartida de RTDB y Auth
 │   └── theme/
 │       ├── colors.ts
 │       └── typography.ts
 └── store/
-    ├── userStore.ts                   # Persistida (AsyncStorage), maneja sesión local
+    ├── userStore.ts                   # Persistida, solo rol 'estudiante' | null
     ├── themeStore.ts                  # Persistencia manual (AsyncStorage)
     ├── mapStore.ts                    # Estado efímero del mapa
     ├── burritoLocationStore.ts        # Estado efímero de ubicación del bus
@@ -207,75 +241,18 @@ src/
 
 | Store | Persistencia | Propósito |
 |-------|-------------|-----------|
-| `userStore` | Zustand persist + AsyncStorage | uuid, username, avatar, rol, isLoggedIn |
+| `userStore` | Zustand persist + AsyncStorage | uuid, username, avatar, rol (solo 'estudiante'), isLoggedIn |
 | `themeStore` | AsyncStorage manual | isDarkMode |
 | `mapStore` | Efímera | isFollowing, command (center/follow) |
 | `burritoLocationStore` | Efímera | locations (Record<string,BurritoLocation>), busMovementStates, isConnecting, startTracking/stopTracking |
 | `drawerStore` | Efímera | isOpen, open/close |
 
-### burritoLocationStore (tracking multi-bus)
+### Módulo Admin (eliminado)
 
-Inicia/para el listener de RTDB. Recibe todas las ubicaciones vía
-`MapService.subscribeToBusLocations()` sobre el path `/ubicacion_buses`.
-Almacena las posiciones en `locations: Record<string, BurritoLocation>`,
-indexado por placa.
-
-Aplica un filtro de deduplicación por placa: rechaza timestamps no más
-nuevos que el actual para cada bus. Clasifica el estado de cada bus
-individualmente según antigüedad de su timestamp:
-
-| Condición | Estado |
-|-----------|--------|
-| `isActive === false` | `offline` |
-| timestamp age < 12s | `moving` |
-| timestamp age >= 12s | `stopped` |
-
-Un intervalo de 2s refresca periódicamente la clasificación de todos
-los buses activos.
-
-### Map.tsx (renderizado)
-
-Componente principal del mapa. Integra `@rnmapbox/maps` con:
-
-- Cámara con centro fijo en UNMSM y bounds que restringen el desplazamiento.
-- Capa de ruta (LineString GeoJSON) con 60+ pares de coordenadas.
-- Capa de paraderos (10 puntos con nombres).
-- Marcador del bus (punto animado con heading).
-- Círculo de radar animado alrededor del bus.
-- Lógica de interpolación: anima la transición entre posiciones GPS
-  usando `RNAnimated.Value` con duración de ~2s.
-- Botón de seguimiento (follow) y centrado.
-- Función Haversine (`calculateDistance`) disponible pero **no activa**
-  en el flujo de tracking (originalmente diseñada para `snapToRoute`,
-  que está comentado por causar saltos con GPS impreciso).
-
-### Módulo Admin
-
-Accesible desde el CustomDrawer cuando `rol === 'admin'`.
-CRUD completo contra RTDB:
-
-| Entidad | Path | Operaciones |
-|---------|------|-------------|
-| Choferes | `/choferes/{dni}` | Crear (Auth + RTDB), listar, toggle activo |
-| Buses | `/buses/{placa}` | Crear + init `/ubicacion_buses/{placa}`, listar, toggle |
-| Asignaciones | `/asignaciones/{pushId}` | Crear con validación de exclusividad, listar, cancelar |
-
-Al crear un chofer, `admin_service.ts` usa una **instancia secundaria de
-Firebase Auth** para no sobrescribir la sesión del admin actual.
-
-### Dark mode
-
-`themeStore` persiste el estado en AsyncStorage. `CustomDrawerContent`
-tiene un toggle manual. En cada montaje del drawer, el estado del sistema
-(`systemColorScheme`) se usa como valor por defecto, pero el toggle manual
-prevalece durante la sesión.
-
-### Hydration gating
-
-`App.tsx` espera que `userStore._hasHydrated` y `themeStore._hasHydrated`
-sean `true` antes de renderizar `NavigationContainer`. Esto evita que
-la navegación se monte con estado vacío antes de que AsyncStorage restaure
-la sesión y el tema.
+El módulo `features/admin/` fue eliminado de la UserApp. El panel de
+gestión ahora reside exclusivamente en la DriverApp. El botón "Panel de
+Gestión" ya no existe en el CustomDrawer. El campo `rol` en `userStore`
+se redujo a `'estudiante' | null`.
 
 ## 5. Flujo de Datos
 
@@ -329,7 +306,7 @@ RNAnimated interpola posición del marcador (~2s)
 Mapbox actualiza canvas
 ```
 
-### Flujo de autenticación (DriverApp)
+### Flujo de autenticación (DriverApp — post-migración)
 
 ```
 LoginDriverScreen.handleLogin()
@@ -342,15 +319,17 @@ Firebase Auth valida credenciales
     ↓
 onAuthStateChanged en DriverApp.tsx detecta user
     ↓
-Renderiza SendCoordinates con driverDni = email.split('@')[0]
-    ↓
-SendCoordinates monta useEffect
-    ↓
-database().ref('/asignaciones').orderByChild('choferId').equalTo(driverDni).once('value')
-    ↓
-Filtra resultado por fecha===today && activo===true
-    ↓
-Guarda busId en estado local
+existeAdministrador(user.uid)?
+    ├── Sí: → NavigationContainer + AdminPanelScreen
+    └── No: → SendCoordinates(driverDni = email.split('@')[0])
+              ↓
+              SendCoordinates monta useEffect
+              ↓
+              database().ref('/asignaciones').orderByChild('choferId').equalTo(driverDni).once('value')
+              ↓
+              Filtra por fecha===today && activo===true
+              ↓
+              Guarda busId en estado local
 ```
 
 ### Flujo de autenticación (UserApp)
@@ -360,16 +339,16 @@ SignInScreen.handleLogin()
     ↓
 auth().signInWithEmailPassword(email, password)
     ↓
-Lee /usuarios/{uid}.once('value')  → obtiene nombre, avatar, rol
+Lee /usuarios/{uid}.once('value')  → obtiene nombre, avatar
     ↓
 Actualiza /usuarios/{uid}/ultimaConexion = ServerValue.TIMESTAMP
     ↓
-userStore.login(uuid, username, avatar, email, rol)
+userStore.login(uuid, username, avatar, email, 'estudiante')
     ↓
-StackNavigator detecta isLoggedIn=true → renderiza DrawerNavigator
+StackNavigator detecta isLoggedIn=true → renderiza DrawerNavigator (MapScreen)
 ```
 
-### Flujo admin
+### Flujo admin (ahora en DriverApp)
 
 ```
 Admin crea chofer:
@@ -394,10 +373,17 @@ Admin asigna:
 
 | Archivo | Responsabilidad |
 |---------|----------------|
-| `index.js` | Registro de la app, comentario sobre persistence desactivada |
-| `src/DriverApp.tsx` | Auth gate, renderiza LoginDriverScreen o SendCoordinates |
+| `index.js` | Registro de la app, comentario sobre persistence desactivada, import gesture-handler |
+| `src/DriverApp.tsx` | Auth gate, enrutador tripartito (admin / conductor / no sesión) |
+| `src/navigation/AdminNavigator.tsx` | Stack navigator de 4 pantallas admin |
 | `src/screen/LoginDriverScreen.tsx` | Login con DNI, manejo de errores de autenticación |
 | `src/screen/SendCoordinates.tsx` | Asignación de bus, permisos, foreground service, GPS, debug console |
+| `src/features/admin/services/admin_service.ts` | CRUD choferes (Auth+RTDB), buses, asignaciones |
+| `src/features/admin/services/admin_check.ts` | `existeAdministrador(uid)` consulta puntual |
+| `src/features/admin/screen/AdminPanelScreen.tsx` | Menú principal admin + botón Cerrar Sesión |
+| `src/features/admin/screen/ChoferesScreen.tsx` | Listar, crear, toggle choferes |
+| `src/features/admin/screen/BusesScreen.tsx` | Listar, crear, toggle buses |
+| `src/features/admin/screen/AsignacionesScreen.tsx` | Listar, crear, cancelar asignaciones |
 | `src/services/firebase_service.ts` | `updateBusLocation()` y `stopBusService()` contra RTDB |
 
 ### BurritoUserApp
@@ -405,16 +391,15 @@ Admin asigna:
 | Archivo | Responsabilidad |
 |---------|----------------|
 | `src/app/App.tsx` | Montaje global, splash, hidratación, Firebase offline/online |
-| `src/app/navigations/StackNavigator.tsx` | Auth gating declarativo |
+| `src/app/navigations/StackNavigator.tsx` | Auth gating declarativo (sin admin) |
 | `src/app/navigations/DrawerNavigator.tsx` | Menú lateral con MapScreen |
 | `src/features/app/screen/AnimatedSplash.tsx` | Splash animado (Lottie) |
 | `src/features/map/screen/MapScreen.tsx` | Orquestador del mapa, inicializa tracking |
 | `src/features/map/components/Map.tsx` | Mapbox canvas, marcadores, ruta, radar, follow |
-| `src/features/map/components/CustomDrawer.tsx` | Drawer animado con perfil, tema, feedback, admin |
+| `src/features/map/components/CustomDrawer.tsx` | Drawer animado con perfil, tema, feedback (sin admin) |
 | `src/features/map/services/map_service.ts` | Listener RTDB a `/ubicacion_buses`, envío de feedback |
-| `src/features/admin/services/admin_service.ts` | CRUD choferes, buses, asignaciones |
 | `src/store/burritoLocationStore.ts` | Estado del tracking, dedup, clasificación moving/stopped/offline |
-| `src/store/userStore.ts` | Sesión persistente del usuario |
+| `src/store/userStore.ts` | Sesión persistente del usuario (solo 'estudiante') |
 | `src/store/themeStore.ts` | Dark mode con persistencia AsyncStorage |
 | `src/shared/config/firebase.ts` | Instancia compartida de Firebase |
 
@@ -424,8 +409,8 @@ Admin asigna:
 
 | Servicio | Uso en DriverApp | Uso en UserApp |
 |----------|-----------------|----------------|
-| Firebase Auth | Login con email/password | Login email/password + Google Sign-In |
-| Firebase RTDB | `/ubicacion_buses/{busId}`, `/asignaciones` | `/ubicacion_buses`, `/choferes`, `/buses`, `/asignaciones`, `/usuarios`, `/comentarios` |
+| Firebase Auth | Login admin y conductor, creación de cuentas de conductor (SecondaryApp) | Login email/password + Google Sign-In |
+| Firebase RTDB | `/ubicacion_buses/{busId}`, `/asignaciones`, `/administradores/`, `/choferes/`, `/buses/` | `/ubicacion_buses`, `/usuarios`, `/comentarios` |
 | Firebase Analytics | No | Eventos de usuario (mapa abierto, bus seguido, mapa centrado) |
 | Firebase Crashlytics | No | Configurado en firebase.json |
 | ServerValue.TIMESTAMP | No | Sí (6 ocurrencias: ultimaConexion, feedback) |
@@ -464,8 +449,10 @@ Estado inicial: app cerrada, sin sesión
     ↓
 3. Firebase Auth valida, onAuthStateChanged → user detectado
     ↓
-4. DriverApp renderiza SendCoordinates(driverDni)
-    ↓
+4. DriverApp ejecuta existeAdministrador(user.uid)
+    ├── Sí: renderiza AdminNavigator (fin del flujo para admin)
+    └── No: renderiza SendCoordinates(driverDni)
+         ↓
 5. useEffect: consulta /asignaciones filtrando por DNI
     ↓
 6. ¿Asignación activa encontrada?
@@ -526,6 +513,27 @@ Estado inicial: app cerrada, sin sesión
 - **Haversine / geofencing**: la función `calculateDistance()` existe
   en `Map.tsx` pero la arquitectura actual **no incorpora geofencing**.
   No hay cierre automático de vueltas ni escritura a `/recorridos`.
+
+### Ramas de navegación (post-migración)
+
+```
+LoginDriverScreen
+    ↓
+onAuthStateChanged
+    ↓
+¿user?.uid existe en /administradores/{uid}?
+    ├── Sí → AdminNavigator
+    │         ├── AdminPanelScreen
+    │         ├── ChoferesScreen
+    │         ├── BusesScreen
+    │         └── AsignacionesScreen
+    │         └── Botón "Cerrar Sesión" → auth().signOut() → LoginDriverScreen
+    │
+    └── No → SendCoordinates (tracking conductor)
+              ├── Botón "INICIAR" → BackgroundJob.start()
+              ├── Botón "DETENER TODO" → BackgroundJob.stop() + auth().signOut()
+              └── → LoginDriverScreen
+```
 
 ## 9. Consideraciones de Implementación
 
