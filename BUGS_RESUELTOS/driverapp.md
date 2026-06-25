@@ -155,3 +155,39 @@ Resuelto
 Lección
 Para seguimiento en tiempo real, nunca uses un bucle con peticiones únicas. El GPS necesita continuidad para ser preciso. 
 
+
+## CASO 010 — Async initializeApp + SecondaryApp
+
+Síntoma:
+Al crear un chofer desde el panel admin, la función createChofer lanzaba:
+"firebase.auth(app) arg expects a FirebaseApp instance or undefined".
+
+Causa Raíz:
+firebase.initializeApp() en @react-native-firebase/app v23.8.8 retorna
+Promise<ReactNativeFirebase.FirebaseApp>, no el objeto directamente. El código
+asignaba el resultado sin await, por lo que secondaryApp era una Promise.
+El duck-type check interno del SDK ('name' in _app en namespace.ts:163-168)
+fallaba porque una Promise no tiene propiedad 'name'.
+
+Diagnóstico:
+Revisar admin_service.ts en BurritoDriverApp. Si secondaryApp no tiene await
+antes de initializeApp(), la variable recibe una Promise en lugar de FirebaseApp.
+
+Solución:
+Agregar await a firebase.initializeApp() y tipar secondaryApp como
+ReactNativeFirebase.FirebaseApp:
+
+let secondaryApp: ReactNativeFirebase.FirebaseApp;
+try { secondaryApp = firebase.app('SecondaryApp'); }
+catch (e) { secondaryApp = await firebase.initializeApp(config, 'SecondaryApp'); }
+
+Archivo:
+BurritoDriverApp/src/features/admin/services/admin_service.ts
+
+Estado:
+Resuelto.
+
+Lección:
+initializeApp() en React Native Firebase es asíncrono. Siempre usar await
+y tipar explícitamente. El tipo any oculta errores de inicialización que
+el SDK no puede manejar.

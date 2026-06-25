@@ -101,7 +101,7 @@ Cada caso documenta: **síntoma**, **causa**, **diagnóstico**,
 | Síntoma | El conductor no puede iniciar sesión, Firebase Auth devuelve `auth/user-not-found` |
 | Causa | La cuenta `${dni}@burritodriver.com` no existe en Firebase Auth. El administrador no creó el chofer desde el panel, o se ingresó un DNI incorrecto |
 | Diagnóstico | Verificar en Firebase Console → Authentication que el email existe |
-| Solución | Crear el chofer desde el panel administrativo de UserApp (AsignacionesScreen). El servicio `admin_service.ts` crea Auth + RTDB simultáneamente |
+| Solución | Crear el chofer desde el Panel de Gestión en BurritoDriverApp (ChoferesScreen). El servicio `admin_service.ts` crea Auth + RTDB simultáneamente |
 | Prevención | El flujo admin siempre crea Auth con email `${dni}@burritodriver.com` y contraseña = DNI |
 
 ### Error al crear chofer desde el panel admin

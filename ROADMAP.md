@@ -4,8 +4,10 @@
 
 El proyecto se encuentra en el **Bloque A (Casa/Calle)** de desarrollo,
 con la infraestructura base completa (T1.1, T2.1, T2.2, T3.1) y el
-tracking multi-bus operativo. El backlog oficial detallado vive en
-`TAREAS.txt`.
+tracking multi-bus operativo. La migración del panel de gestión a la
+DriverApp (FASE 1-5) fue completada, cerrando el deadlock arquitectónico
+entre el spinner de Mapbox y el panel admin. El backlog oficial detallado
+vive en `TAREAS.txt`.
 
 A partir de aquí, el roadmap se organiza en dos bloques con
 dependencias funcionales.
@@ -14,10 +16,13 @@ dependencias funcionales.
 
 | Tarea | Descripción | Proyecto |
 |-------|-------------|---------|
-| T1.1 | Route Guard por Rol: gating de rutas admin via `rol === 'admin'` en StackNavigator | BurritoUserApp |
+| T1.1 | Route Guard por Rol (pre-migración): gating de rutas admin via `rol === 'admin'` en StackNavigator. Reemplazado por ADR-017 (autorización por `/administradores/{auth.uid}`). | BurritoUserApp |
 | T2.1 | Firebase Rules: RBAC, `.indexOn` en `/asignaciones/choferId`, mínimo privilegio | Consola Firebase |
 | T2.2 | Testing Unitario: Haversine (6 tests), getMovementStatus (6 tests), filtro dedup (7 tests), App.test.tsx corregido | BurritoUserApp + BurritoDriverApp |
 | T3.1 | Multi-bus listener: migración de `/ubicacion_burrito` a `/ubicacion_buses`, store `Record<string, BurritoLocation>` | BurritoUserApp |
+| T5.4 | Migración del Panel de Gestión a DriverApp: módulo admin trasplantado, enrutador tripartito por auth.uid, poda de UserApp, reglas RTDB reescritas | BurritoDriverApp + BurritoUserApp |
+| T5.5 | Seguridad — autorización por `/administradores/{auth.uid}` con `.write: false`, deprecación de `rol` como fuente admin | Consola Firebase |
+| ADR-018 | Bug async `initializeApp` en `admin_service.ts` — corregido con `await` + tipo `FirebaseApp` | BurritoDriverApp |
 
 ## 3. Bloque A: Casa / Calle
 
@@ -32,7 +37,7 @@ No requiere estar en el campus universitario.
 | 3 | T5.3: Timeout Check — ocultar buses sin actualización >60s | UserApp | T4.1 |
 | 4 | T4.2: Control de Turnos — botones INICIAR/FINALIZAR, creación de `/recorridos` | DriverApp | T4.1 |
 | 5 | T4.4: Multi-bus render completo — ShapeSource + SymbolLayer por cada bus activo | UserApp | T3.2 |
-| 6 | T4.5: Monitor de Flota — sección "Flota en servicio ahora" en AdminPanelScreen | UserApp | T4.4 |
+| 6 | T4.5: Monitor de Flota — sección "Flota en servicio ahora" en AdminPanelScreen | DriverApp | T4.4 |
 | 7 | T4.6: Estadísticas — StatsScreen con métricas de recorridos | UserApp | T4.2 |
 | 8 | T4.3: Geofencing (implementación) — máquina de estados con Haversine, histéresis 40m/80m | DriverApp | T4.2 |
 | 9 | T5.2: Smoothing (implementación) — algoritmo de interpolación (moving average / Kalman ligero) | UserApp | T4.4 |
@@ -77,7 +82,7 @@ que representan la dirección futura del proyecto.
 ## 7. Dependencias entre Bloques
 
 ```
-Tareas Completadas (T1.1, T2.1, T2.2, T3.1)
+Tareas Completadas (T1.1, T2.1, T2.2, T3.1, T5.4, T5.5)
     ↓
 Bloque A (Casa/Calle) ← implementación desde casa
     ↓
