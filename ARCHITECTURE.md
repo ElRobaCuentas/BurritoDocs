@@ -76,7 +76,10 @@ onAuthStateChanged → user detectado
     ↓
 existeAdministrador(user.uid)?
     ├── Sí → NavigationContainer + AdminNavigator (AdminPanelScreen)
-    └── No → SendCoordinates(driverDni)  ← tracking conductor existente
+    ├── No → SendCoordinates(driverDni)  ← tracking conductor existente
+    └── Error → vista "No se pudo verificar tu cuenta" (C1)
+                 ├── Reintentar → re-ejecuta existeAdministrador
+                 └── Cerrar sesión → auth().signOut() → LoginDriverScreen
 ```
 
 El estado `initializing=true` cubre tanto la carga inicial de Auth como la
@@ -149,6 +152,11 @@ existeAdministrador(uid: string): Promise<boolean>
 Consulta `/administradores/{uid}` con `once('value')` y retorna
 `snapshot.exists()`. Es la fuente de verdad tanto para el enrutador de
 DriverApp como para las reglas de RTDB.
+
+Si la consulta falla (rechaza), el error se propaga al enrutador de
+`DriverApp.tsx`, que muestra una vista de error con reintento y cierre de
+sesión (C1). El cuelgue por falta de red no genera error: Firebase espera
+y la consulta se resuelve al recuperar la conexión.
 
 ### AdminNavigator
 
@@ -321,15 +329,16 @@ onAuthStateChanged en DriverApp.tsx detecta user
     ↓
 existeAdministrador(user.uid)?
     ├── Sí: → NavigationContainer + AdminPanelScreen
-    └── No: → SendCoordinates(driverDni = email.split('@')[0])
-              ↓
-              SendCoordinates monta useEffect
-              ↓
-              database().ref('/asignaciones').orderByChild('choferId').equalTo(driverDni).once('value')
-              ↓
-              Filtra por fecha===today && activo===true
-              ↓
-              Guarda busId en estado local
+    ├── No: → SendCoordinates(driverDni = email.split('@')[0])
+    │          ↓
+    │          SendCoordinates monta useEffect
+    │          ↓
+    │          database().ref('/asignaciones').orderByChild('choferId').equalTo(driverDni).once('value')
+    │          ↓
+    │          Filtra por fecha===today && activo===true
+    │          ↓
+    │          Guarda busId en estado local
+    └── Error: → vista "No se pudo verificar tu cuenta" (Reintentar / Cerrar sesión)
 ```
 
 ### Flujo de autenticación (UserApp)
@@ -529,10 +538,14 @@ onAuthStateChanged
     │         └── AsignacionesScreen
     │         └── Botón "Cerrar Sesión" → auth().signOut() → LoginDriverScreen
     │
-    └── No → SendCoordinates (tracking conductor)
-              ├── Botón "INICIAR" → BackgroundJob.start()
-              ├── Botón "DETENER TODO" → BackgroundJob.stop() + auth().signOut()
-              └── → LoginDriverScreen
+    ├── No → SendCoordinates (tracking conductor)
+    │         ├── Botón "INICIAR" → BackgroundJob.start()
+    │         ├── Botón "DETENER TODO" → BackgroundJob.stop() + auth().signOut()
+    │         └── → LoginDriverScreen
+    │
+    └── Error en el chequeo (C1) → vista "No se pudo verificar tu cuenta"
+              ├── Botón "Reintentar" → re-ejecuta existeAdministrador
+              └── Botón "Cerrar sesión" → auth().signOut() → LoginDriverScreen
 ```
 
 ## 9. Consideraciones de Implementación
