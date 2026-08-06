@@ -191,3 +191,288 @@ Lección:
 initializeApp() en React Native Firebase es asíncrono. Siempre usar await
 y tipar explícitamente. El tipo any oculta errores de inicialización que
 el SDK no puede manejar.
+
+---
+
+## CASO 011 — El tracking se detenía en silencio sin avisar al conductor
+
+Síntoma:
+El servicio que envía la ubicación podía detenerse de forma silenciosa
+(por Android, batería o error del sistema) y el conductor no se enteraba:
+la app seguía mostrando "Compartiendo ubicación", pero el bus ya no
+escribía en RTDB y desaparecía del mapa de los estudiantes.
+
+Causa Raíz:
+`BackgroundJob.isRunning()` de react-native-background-actions solo
+devuelve un flag JS que cambia con `stop()` explícito; no detecta la
+muerte nativa del servicio. Además no existía ningún mecanismo que
+intentara recuperar el servicio ni avisar al conductor.
+
+Diagnóstico:
+El panel de diagnóstico de SendCoordinates mostraba pulsos "✅ POSICIÓN"
+y luego nada: el servicio había muerto pero la UI seguía en estado activo.
+
+Solución (tarea C3):
+- Pulso de vida: cada fix de `watchPosition` emite `PRO_LOCATION_PULSE`
+  hacia la UI.
+- Watchdog: con el recorrido activo, cada 10s verifica si pasaron más de
+  30s sin pulso. De ser así, `restartBackgroundJob()`: `BackgroundJob.stop()`
+  en try/catch + `BackgroundJob.start()` (idempotente en nativo).
+- Si el reinicio falla (p. ej. `ForegroundServiceStartNotAllowedException`
+  al intentar arrancar desde background en Android 14): `isSending=false`,
+  banner persistente "El envío de ubicación se detuvo y no pudo
+  recuperarse automáticamente" y Alert con instrucción de reintentar.
+
+Archivo:
+BurritoDriverApp/src/screen/SendCoordinates.tsx
+
+Estado:
+Resuelto — validado en hardware real (Motorola G24 Power):
+- Reinicio automático: 3 ciclos puros en panel debug sin interacción.
+- Fallo de recuperación: reinicio desde background rechazado por el
+  sistema (`startForegroundService() not allowed due to
+  mAllowStartForeground false`) → banner + botón INICIAR restaurados.
+- No-regresión: INICIAR/DETENER verificados con `isActive` en RTDB.
+
+Lección:
+`isRunning()` de la librería no es una fuente de verdad confiable para
+detectar muerte del servicio; los pulsos de datos reales sí. Un FGS
+no puede arrancar desde background en Android 14: la UI debe avisar
+cuando la recuperación automática no es posible.
+
+---
+
+## CASO 012 — El cierre del tracking podía dejar la UI en "Compartiendo ubicación" (C4.2)
+
+Síntoma:
+Si `BackgroundJob.stop()` fallaba (o había doble pulsación sobre DETENER), la
+UI podía quedarse en "Compartiendo ubicación" aunque el servicio ya estuviera
+detenido, o lanzar errores al detener en momentos intermedios (servicio ya
+detenido, watchdog reiniciando).
+
+Causa Raíz:
+`stopProcess` ejecutaba `BackgroundJob.stop()` sin protección: si lanzaba error,
+`setIsSending(false)` nunca se alcanzaba y el estado quedaba inconsistente.
+Tampoco había guard contra ejecuciones en paralelo (doble toque o colisión con
+el reinicio del watchdog).
+
+Solución (tarea C4.2):
+- Guard `isStoppingRef` (useRef): impide que `stopProcess` se ejecute en paralelo.
+- `BackgroundJob.stop()` envuelto en try/catch: un error al detener no aborta la rutina.
+- Verificación del resultado de `stopBusService(busId)`: si no marca
+  `isActive:false`, se loguea el fallo.
+- `setIsSending(false)` y liberación del guard en `finally`: el estado siempre
+  converge a "Detenido".
+
+Archivo:
+Driver/src/screen/SendCoordinates.tsx
+
+Estado:
+Resuelto — validado en hardware real (Motorola G24 Power):
+- Ciclo completo INICIAR → DETENER: UI "Detenido", `isActive=false` en RTDB.
+- Doble toque DETENER: sin crash, UI "Detenido" (idempotente).
+- DETENER durante reinicio del watchdog (C3): UI consistente "Detenido".
+- Sin FATAL EXCEPTION en logcat.
+
+Lección:
+El apagado del tracking debe ser idempotente y tolerante a cualquier orden de
+llamadas: nunca asumir que `stop()` no falla, y garantizar con `finally` que la
+UI siempre converja al estado real.
+
+---
+
+## CASO 013 — Al reabrir la app con el servicio activo, la UI se desincronizaba (C4.7)
+
+Síntoma:
+Con el recorrido activo, al deslizar la app desde recientes (el servicio nativo
+sigue vivo por `stopWithTask="false"` y sigue transmitiendo) y reabrirla, la UI
+mostraba "INICIAR RECORRIDO" aunque el servicio seguía activo; el botón INICIAR
+no respondía (el guard `if (BackgroundJob.isRunning()) return` abortaba en
+silencio), dejando al conductor sin control sobre el servicio.
+
+Causa Raíz:
+`isSending` es `useState(false)`: al re-montar `SendCoordinates` el estado
+visual se reinicia sin consultar la realidad del motor. El servicio y el
+singleton JS sobreviven (mismo proceso, `stopWithTask="false"`), pero la UI
+asumía "detenido".
+
+Solución (tarea C4.7):
+En el `useEffect` de montaje, después de registrar los listeners (para que
+`sendLog` funcione) y antes de `fetchAssignment()` (solo restaura estado visual,
+no depende de Firebase ni modifica la asignación): si `BackgroundJob.isRunning()`
+es `true`, restaurar el estado del motor — `setLogs([])`, `lastPulseRef.current
+= Date.now()`, `setRecoveryFailed(false)`, `setIsSending(true)` — y loguear
+"Recorrido restaurado". No se crea un segundo BackgroundJob ni se altera el
+ciclo de vida del servicio; `isActive` de Firebase sigue sin ser fuente de
+verdad.
+
+Archivo:
+Driver/src/screen/SendCoordinates.tsx
+
+Estado:
+Resuelto — validado en hardware real (Motorola G24 Power):
+- INICIAR → quitar de recientes (proceso vivo) → reabrir: UI "Compartiendo
+  ubicación" + DETENER RECORRIDO con log "Recorrido restaurado".
+- DETENER sobre el servicio restaurado: UI "Detenido", servicio detenido,
+  `isActive=false` en RTDB.
+- Regresión C4.2: ciclo INICIAR→DETENER y doble toque DETENER sin crash.
+- Sin FATAL EXCEPTION en logcat. Nota: en sala sin fix GPS no hubo escrituras
+  nuevas (timestamp congelado); la restauración y el apagado se validaron por
+  UI, proceso y RTDB.
+
+Lección:
+La UI no debe asumir el estado del motor desde cero en cada montaje: si el
+proceso y el servicio sobrevivieron, `BackgroundJob.isRunning()` (mismo proceso)
+es una fuente de verdad fiable para restaurar el estado visual y devolverle el
+control al conductor.
+
+---
+
+## CASO 014 — El auth gate colgaba offline: spinner infinito sin CERRAR SESIÓN (C4.AUTH)
+
+Síntoma:
+Con sesión guardada y sin red (modo avión), la DriverApp quedaba en un spinner
+infinito sin botón CERRAR SESIÓN. `SendCoordinates` nunca se montaba, por lo
+que era imposible validar C4.3 offline. Espera >30 min sin cambio de estado.
+
+Causa Raíz:
+`existeAdministrador()` (`admin_check.ts`) usaba `once('value')` de rnfirebase.
+Sin persistence (ADR-003) y sin red, `once('value')` **ni resuelve ni rechaza**:
+cuelga indefinidamente. El efecto de `DriverApp.tsx` quedaba con
+`isCheckingRole=true` para siempre; el `.catch` (que sí tenía UI de error con
+REINTENTAR y CERRAR SESIÓN) nunca se disparaba.
+
+Solución (tarea C4.AUTH):
+Acotar el read con timeout a nivel de servicio: `existeAdministrador` envuelve
+el `once('value')` en `withTimeout(..., ROLE_TIMEOUT_MS=10000)` (helper compartido
+`src/shared/utils/timeout.ts`, extraído de C4.3). Al vencer el timeout la promesa
+rechaza, el `.catch` existente de `DriverApp.tsx` dispara la pantalla de error
+(roleError) y el `.finally` libera el spinner. Sin nuevas pantallas: se reutilizó
+la UI que ya existía (REINTENTAR incrementa `roleAttempt` y re-ejecuta el efecto;
+CERRAR SESIÓN usa `auth().signOut()`, operación local que funciona offline). Sin
+reintentos automáticos (decisión de diseño: el gate corre una vez al abrir la
+app; 10s + esperar y reintentar empeoraría la UX).
+
+Archivos:
+- `Driver/src/shared/utils/timeout.ts` (nuevo: `withTimeout`, `pause`)
+- `Driver/src/features/admin/services/admin_check.ts`
+- `Driver/src/screen/SendCoordinates.tsx` (reemplaza los helpers locales por el import compartido)
+- `Driver/src/DriverApp.tsx` (sin cambios netos: la UI de roleError ya cubría el caso)
+
+Estado:
+Resuelto — validado en hardware real (Motorola G24 Power):
+- Red normal: el gate resuelve y entra a SendCoordinates (sin regresión).
+- Modo avión + WiFi off (sin red real, 100% pérdida y sin DNS): el timeout de
+  10s dispara `existeAdministrador REJECTED -> roleError` y
+  `isCheckingRole false` (logcat), mostrando "No se pudo verificar tu cuenta"
+  con REINTENTAR y Cerrar sesión (dump uiautomator). Antes quedaba en spinner
+  eterno sin salida.
+- Red restaurada + tap REINTENTAR: resuelve el rol y navega a SendCoordinates
+  (Conductor Juan Matias / AHK-124).
+- `npx tsc --noEmit` exit 0. Los 2 errores de lint son preexistentes en HEAD
+  (`asignacionId` en SendCoordinates:135, `e` en admin_service:79) y están fuera
+  de alcance.
+
+Lección:
+Todo read con `once()` de rnfirebase sin persistence cuelga offline (ni resuelve
+ni rechaza). Nunca debe quedar sin acotación de tiempo; el timeout debe vivir en
+la capa de servicio para proteger a todos sus llamadores. Nota: `admin_service.ts`
+(l.67, 147, 225) tiene más `once('value')` sin acotar, pero son del panel admin
+tras login y quedaron fuera de alcance de C4.AUTH — evaluar como deuda separada.
+
+---
+
+## CASO 015 — La carga de la asignación colgaba sin límite y sin salida ante la pérdida de red (C4.3)
+
+Síntoma:
+Con red caída durante el montaje de `SendCoordinates`, el spinner "Cargando
+asignación..." podía quedarse indefinidamente: la lectura de `/asignaciones` (y
+de `/choferes/{dni}`) no resolvía, no había límite de tiempo, ni reintento
+acotado, ni una forma de salir (el CERRAR SESIÓN solo aparecía tras renderizar
+la pantalla normal). El conductor quedaba atrapado en el spinner sin informar
+del problema.
+
+Causa Raíz:
+`fetchAssignment` (dentro del `useEffect` de montaje) usaba dos `once('value')`
+de rnfirebase. Sin persistence (ADR-003) y sin red, `once()` **ni resuelve ni
+rechaza** (mismo comportamiento empírico que el auth gate de C4.AUTH): la
+promesa queda colgada y `setLoadingAssignment(false)` del `finally` jamás se
+alcanza. No había timeout, ni reintentos, ni estado de error en la UI.
+
+Solución (tarea C4.3):
+Extraer la carga a `loadAssignment` (useCallback) y acotarla con las primitivas
+compartidas `withTimeout` + `pause` (`src/shared/utils/timeout.ts`, heredadas de
+C4.AUTH):
+- Timeout por intento COMPLETO: `ASSIGNMENT_TIMEOUT_MS = 10000` cubre lectura de
+  chofer + lectura de asignación con un solo reloj.
+- Reintentos acotados: `ASSIGNMENT_RETRIES = 2` con pausa
+  `ASSIGNMENT_RETRY_PAUSE_MS = 1500`. La UI muestra "Problemas de conexión.
+  Reintentando…" mientras reintenta.
+- Guard de generación (`fetchGenRef`): las respuestas tardías de un intento
+  vencido no sobrescriben un ciclo más nuevo (Promise.race no cancela la
+  consulta, solo deja de esperarla).
+- Guard anti-paralelo (`isLoadingAssignmentRef`): REINTENTAR no lanza ciclos
+  simultáneos.
+- Resultado válido sin asignación: Firebase respondió y no hay bus → NO se
+  reintenta (mensaje "No hay asignación para hoy").
+- Al agotar los reintentos: errorCard visible con REINTENTAR (nuevo ciclo) y
+  CERRAR SESIÓN (siempre accesible). Nunca se atrapa al conductor.
+- El guard `isLoadingAssignmentRef` se libera en `finally` en TODOS los caminos
+  para que REINTENTAR siga funcionando.
+
+Archivo:
+Driver/src/screen/SendCoordinates.tsx
+
+Estado:
+Resuelto — validado en hardware real (Motorola G24 Power):
+- Offline (corte de red al ver "Cargando asignación..."): log de diagnóstico
+  ❌ Intento 1/2 falló → ⚠️ Problemas de conexión, reintentando (2/2) → ❌
+  Intento 2/2 falló → errorCard "No se pudo cargar tu asignación / Verifica tu
+  conexión a Internet e inténtalo nuevamente." con REINTENTAR y CERRAR SESIÓN.
+  Sin spinner infinito. 2 ciclos completos.
+- Guard anti-paralelo: 3 taps rápidos a REINTENTAR con red apagada → 1 solo
+  ciclo, sin llamadas paralelas ni crash.
+- Recuperación: `svc wifi enable` + REINTENTAR → "Conductor identificado: Juan
+  Matias" + "Bus asignado: AHK-124", pantalla normal.
+- CERRAR SESIÓN desde la errorCard: diálogo de confirmación → pantalla de login.
+- Regresión INICIAR→DETENER: tracking real en RTDB (`isActive=true` → `false`),
+  UI "Compartiendo ubicación" → "Detenido".
+- Sin FATAL EXCEPTION. `npx tsc --noEmit` exit 0.
+
+Lección:
+Todo read con `once()` de rnfirebase sin persistence cuelga offline (ni resuelve
+ni rechaza). Además de acotar con timeout el gate de autenticación (C4.AUTH),
+la carga crítica de la asignación debe tener timeout por intento, reintentos
+acotados y una tarjeta de error con salida (REINTENTAR/CERRAR SESIÓN) para que
+el conductor nunca quede atrapado en un spinner sin límite.
+
+---
+
+## Hallazgos de auditoría pendientes (sin corrección)
+
+Hallazgos detectados durante la validación de C4.2. Se registran por separado
+porque no fueron corregidos en esa tarea y requieren evaluación propia.
+
+### Hallazgo A — Cerrar la app desde recientes con tracking activo desincroniza la UI
+Si el conductor inicia el recorrido, desliza la app desde recientes (el servicio
+sigue vivo por `stopWithTask="false"` y escribe en RTDB) y la reabre, la UI
+muestra "INICIAR RECORRIDO" (estado por defecto al re-montar) aunque el servicio
+sigue transmitiendo; el botón INICIAR no responde.
+→ Convertido en la tarea **C4.7** en el backlog (`MVP.md`). Sonda previa
+validada en el Motorola (G24 Power): tras INICIAR → quitar de recientes →
+reabrir, `BackgroundJob.isRunning()` devuelve **`true`** con el servicio vivo
+(mismo proceso, singleton JS conservado). Fuente de verdad fiable para la
+corrección.
+→ **Resuelto por C4.7** (ver CASO 013): al re-montar `SendCoordinates`, si
+`isRunning()` es `true` se restaura `isSending` y la UI recupera "Compartiendo
+ubicación" + DETENER RECORRIDO.
+
+### Hallazgo B — `isActive=true` con timestamp congelado
+Puede quedar `isActive=true` en RTDB mientras el servicio está muerto y el
+timestamp deja de actualizarse. Validar en C4.6/T1 que BurritoUserApp oculta
+el bus por inactividad; si no lo oculta, abrir subtarea bloqueante.
+
+### Hallazgo C — Logout/revocación remota con tracking activo
+CERRAR SESIÓN (o revocación remota de sesión) con el servicio nativo vivo deja
+el servicio corriendo en segundo plano (no hay cleanup en unmount). Riesgo
+pendiente de validación; evaluar por separado si se reproduce.
