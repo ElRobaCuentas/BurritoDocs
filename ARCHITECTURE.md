@@ -252,7 +252,7 @@ src/
 | `userStore` | Zustand persist + AsyncStorage | uuid, username, avatar, rol (solo 'estudiante'), isLoggedIn |
 | `themeStore` | AsyncStorage manual | isDarkMode |
 | `mapStore` | Efímera | isFollowing, command (center/follow) |
-| `burritoLocationStore` | Efímera | locations (Record<string,BurritoLocation>), busMovementStates, isConnecting, startTracking/stopTracking |
+| `burritoLocationStore` | Efímera | locations (Record<string,BurritoLocation>), busMovementStates, isConnecting, connectionError, startTracking/stopTracking |
 | `drawerStore` | Efímera | isOpen, open/close |
 
 ### Módulo Admin (eliminado)
@@ -312,6 +312,15 @@ Map.tsx deriva burritoLocation del primer bus activo (fallback)
 RNAnimated interpola posición del marcador (~2s)
     ↓
 Mapbox actualiza canvas
+
+Desmontaje (C4.4):
+MapScreen.unmount() → cleanup → burritoLocationStore.stopTracking()
+    ↓
+unsubscribe() (ref.off('value', callback))  ← se libera el listener RTDB
+    ↓
+clearInterval(onlineInterval de 2s)          ← se libera el ciclo de vida
+    ↓
+0 listeners / 0 intervalos activos (sin consumo residual)
 ```
 
 ### Flujo de autenticación (DriverApp — post-migración)
@@ -333,11 +342,15 @@ existeAdministrador(user.uid)?
     │          ↓
     │          SendCoordinates monta useEffect
     │          ↓
-    │          database().ref('/asignaciones').orderByChild('choferId').equalTo(driverDni).once('value')
+    │          loadAssignment() (C4.3): lee /choferes/{dni} y
+    │          /asignaciones con timeout de 10s por intento y
+    │          hasta 2 reintentos acotados
     │          ↓
     │          Filtra por fecha===today && activo===true
-    │          ↓
-    │          Guarda busId en estado local
+    │          ├── Sí: guarda busId en estado local
+    │          └── No / agota reintentos:
+    │              ├── Sin asignación válida → "No tienes un bus asignado"
+    │              └── Error de red → errorCard (REINTENTAR / CERRAR SESIÓN)
     └── Error: → vista "No se pudo verificar tu cuenta" (Reintentar / Cerrar sesión)
 ```
 
@@ -462,11 +475,14 @@ Estado inicial: app cerrada, sin sesión
     ├── Sí: renderiza AdminNavigator (fin del flujo para admin)
     └── No: renderiza SendCoordinates(driverDni)
          ↓
-5. useEffect: consulta /asignaciones filtrando por DNI
+5. useEffect: loadAssignment() consulta /choferes/{dni} y /asignaciones
+   con timeout de 10s por intento y hasta 2 reintentos acotados (C4.3)
     ↓
 6. ¿Asignación activa encontrada?
     ├── Sí: guarda busId, habilita botón INICIAR
-    └── No: muestra "No tienes un bus asignado"
+    ├── No: muestra "No tienes un bus asignado"
+    └── Error (se agotan los reintentos): errorCard
+        "No se pudo cargar tu asignación" con REINTENTAR y CERRAR SESIÓN
     ↓
 7. Usuario presiona INICIAR RECORRIDO
     ↓
@@ -489,6 +505,15 @@ Estado inicial: app cerrada, sin sesión
     ↓
 13. Firebase RTDB recibe escritura en /ubicacion_buses/{busId}
     ↓
+13a. Cada fix de GPS emite un pulso (PRO_LOCATION_PULSE) hacia la UI
+    ↓
+13b. Watchdog (C3): intervalo 10s, timeout 30s sin pulso
+    ├── Pulso presente: no hace nada
+    └── Sin pulso: restartBackgroundJob()
+         ├── BackgroundJob.stop() (try/catch) + BackgroundJob.start()
+         ├── Éxito: log "🔄 SERVICIO REINICIADO"
+         └── Falla: isSending=false + Alert + banner persistente
+    ↓
 14. [Usuario presiona DETENER TODO]
     ↓
 15. BackgroundJob.stop()
@@ -510,6 +535,30 @@ Estado inicial: app cerrada, sin sesión
   `foregroundServiceType: ['location']` en las opciones de JS.
   La ausencia de cualquiera de los tres provoca
   `InvalidForegroundServiceTypeException` en runtime.
+- **Watchdog (C3)**: `isRunning()` de la librería no detecta la muerte
+  nativa del servicio (flag JS que solo cambia con `stop()` explícito).
+  Por eso el watchdog usa pulsos reales de GPS. `BackgroundJob.start()`
+  es idempotente (nativo: `stopService` + `startForegroundService`), lo
+  que hace seguro el ciclo stop/start del reinicio. Un FGS no puede
+  iniciarse desde background (Android 14 lanza
+  `ForegroundServiceStartNotAllowedException`); en ese escenario el
+  reinicio falla y se avisa al conductor.
+- **Cierre idempotente (C4.2)**: `stopProcess` protege el apagado del
+  tracking ante doble pulsación, reinicio del watchdog o servicio ya
+  detenido. `isStoppingRef` impide ejecuciones en paralelo; el cuerpo
+  envuelve `BackgroundJob.stop()` en try/catch y verifica el resultado
+  de `stopBusService`; el `finally` garantiza `setIsSending(false)` y
+  libera el guard. `DETENER RECORRIDO` sigue siendo la única fuente de
+  verdad para `isActive: false`.
+- **Restauración del estado al re-montar (C4.7)**: al cerrar la app desde
+  recientes con el tracking activo, el servicio nativo sigue vivo
+  (`stopWithTask="false"`, mismo proceso), por lo que al re-montar
+  `SendCoordinates`, `BackgroundJob.isRunning()` es `true` (el singleton JS
+  sobrevivió). En el `useEffect` de montaje, si es `true` se restaura
+  `isSending=true`, se reinicia `lastPulseRef`, se limpia `recoveryFailed` y se
+  loguea "Recorrido restaurado", para que la UI muestre "Compartiendo
+  ubicación" + DETENER RECORRIDO. `isActive` de Firebase sigue sin ser fuente
+  de verdad: el conductor recupera el control del servicio real.
 - **Doze Mode**: el foreground service evita que el SO suspenda el hilo
   de GPS cuando la pantalla se apaga. Sin este servicio,
   `watchPosition` se detiene al minimizar la app.

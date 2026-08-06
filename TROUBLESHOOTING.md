@@ -94,6 +94,16 @@ Cada caso documenta: **síntoma**, **causa**, **diagnóstico**,
 
 ## 5. Autenticación
 
+### Auth gate cuelga offline (spinner infinito sin CERRAR SESIÓN)
+
+| Campo | Descripción |
+|-------|-------------|
+| Síntoma | Con sesión guardada y sin red (modo avión), la DriverApp queda en spinner infinito. No hay CERRAR SESIÓN. `SendCoordinates` nunca se monta |
+| Causa | `existeAdministrador()` (`admin_check.ts:5`) usa `once('value')` de rnfirebase, que **offline cuelga indefinidamente — ni resuelve ni rechaza**. `isCheckingRole` queda `true` para siempre en `DriverApp.tsx` |
+| Diagnóstico | Captura CDP del JS: log START de `existeAdministrador` aparece y el DONE jamás. `adb logcat` no muestra error (no es un throw, es una promesa que nunca termina) |
+| Solución | Acotar la llamada con timeout (`get()` con `withTimeout` o equivalente) y ofrecer REINTENTAR + CERRAR SESIÓN ante fallo. **Resuelto por C4.AUTH** (`admin_check.ts` envuelve el `once('value')` en `withTimeout(..., 10000)`; ver `docs/BUGS_RESUELTOS/driverapp.md` CASO 014) |
+| Prevención | Todo read `once()` de rnfirebase sin persistence (ADR-003) cuelga offline. No dejarlo sin límite de tiempo |
+
 ### Login de conductor falla con "user-not-found"
 
 | Campo | Descripción |
@@ -145,6 +155,16 @@ Cada caso documenta: **síntoma**, **causa**, **diagnóstico**,
 | Diagnóstico | Verificar que la notificación persistente "Transmitiendo ubicación" esté visible en la barra de estado |
 | Solución | Asegurar que `BackgroundJob.start()` se ejecutó correctamente. Si la notificación no aparece, el permiso `POST_NOTIFICATIONS` puede estar denegado |
 | Prevención | El código solicita `POST_NOTIFICATIONS` al iniciar tracking. Si se denegó, abre Settings para que el usuario lo active manualmente |
+
+### El servicio se reinicia solo cada ~40 segundos
+
+| Campo | Descripción |
+|-------|-------------|
+| Síntoma | En el panel de diagnóstico aparecen ciclos repetidos de "⚠️ Motor sin pulsos" → "🔄 SERVICIO REINICIADO" cada ~40s, sin que el conductor toque nada |
+| Causa | No hay fix de GPS (interiores, sin satélites, permiso denegado). Sin posición no hay pulso, y el watchdog de C3 (timeout 30s) reinicia el servicio en bucle |
+| Diagnóstico | `adb shell "dumpsys location \| grep -A6 'gps provider'"`: si `last location=null` y 0 satélites en fix, el hardware no ve satélites |
+| Solución | Es el comportamiento esperado de C3. Acercar el teléfono a una ventana o salir al exterior: al llegar el primer fix, los pulsos fluyen y el bucle cesa. Si el bucle persiste con GPS visible, hay un problema real de tracking |
+| Prevención | El watchdog solo reinicia; no puede crear satélites. Evaluar en C4 si conviene avisar al conductor tras N reinicios fallidos |
 
 ### Notificación del foreground service no aparece
 
@@ -256,6 +276,7 @@ actual del proyecto, planificadas en fases futuras del roadmap.
 | iOS no soportado para DriverApp | Limitación de plataforma |
 | Test unitario de DriverApp (`__tests__/App.test.tsx`) está roto (hereda de archivo `../App` inexistente) | Por resolver |
 | El archivo `gradle.properties` contiene credenciales de release en texto plano (`burrito123`) | Requiere rotación de claves |
+| Pérdida de red **durante** la sesión: Firebase no dispara `onError` ante cortes de red y no existe watchdog en sesión (el timeout de 10s solo protege el primer snapshot) → la última posición queda congelada sin overlay | Planificado (C4.8 detección / C4.6 UX) |
 
 ## 11. Referencias
 

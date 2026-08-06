@@ -88,5 +88,102 @@ En Android 14 no basta con declarar foregroundServiceType en el Manifest. El mis
 
 
 
+## CASO 016 — El tracking seguía vivo tras desmontar MapScreen: listener y intervalo "fantasma" (C4.4)
 
+Síntoma:
+Tras cerrar sesión (logout) desde el drawer, la UserApp seguía escuchando
+Firebase: el listener RTDB de `/ubicacion_buses` y el intervalo de 2s de
+`burritoLocationStore` quedaban activos aunque MapScreen ya estaba destruido.
+La app seguía consumiendo recursos y recibiendo deltas de ubicación sin que el
+usuario estuviera en el mapa.
+
+Causa Raíz:
+El `useEffect` de montaje de `MapScreen` llamaba a `actions.startTracking()`
+pero su cleanup solo hacía `clearTimeout(timer)`, nunca `actions.stopTracking()`.
+`stopTracking()` ya existía en el store (desuscribe el listener y limpia el
+intervalo) y estaba cubierto por tests, pero tenía **cero call sites** de
+producción: nadie lo invocaba. Al desmontar la pantalla, el listener RTDB y el
+`onlineInterval` de 2s quedaban vivos (fuga de suscripción).
+
+Solución (tarea C4.4):
+`MapScreen.tsx` — el cleanup ahora detiene el tracking:
+```
+return () => {
+  clearTimeout(timer);
+  actions.stopTracking();
+};
+```
+Sin cambios en `startTracking()`, `stopTracking()`, `MapService` ni el store.
+`map_service.ts` y `burritoLocationStore.ts` quedaron intactos.
+
+Validación (Motorola G24 Power, instrumentación temporal `[C4.4]` luego
+eliminada):
+- Login → `START_TRACKING` → `LISTENER_ADJUNTO n=1` → `HEARTBEAT` cada 2s
+  (contador de listeners adjuntos).
+- Logout → `STOP_TRACKING` → `LISTENER_DESADJUNTO n=0` → silencio absoluto
+  (sin `HEARTBEAT` durante 15s de espera).
+- Re-login → `LISTENER_ADJUNTO n=1`, nunca `n=2`: no quedan listeners
+  "fantasma" ni doble suscripción.
+- 3 ciclos completos login/logout: el contador nunca acumuló (1→0→1→0→1).
+- Regresión background (~50s con la app minimizada): el `HEARTBEAT` continuó —
+  el tracking NO debe cortarse al minimizar (MapScreen no se desmonta).
+- `npx tsc --noEmit` exit 0; `npm test` 19/19; `npm run lint` sin errores
+  nuevos.
+
+Archivo:
+User/src/features/map/screen/MapScreen.tsx
+
+Estado:
+Resuelto — PR #5 (merge pendiente).
+
+Lección:
+El patrón `startTracking` en el montaje exige su contraparte en el cleanup.
+Una función de detención correcta y testeada es inútil si ningún call site la
+invoca. Validar el ciclo de vida con un contador de listeners adjuntos
+(`n`) permite detectar fugas que los tests unitarios solos no ven.
+
+
+## CASO 017 — Pérdida de red durante la sesión no detectada: última posición congelada (límite C4.5 → C4.8/C4.6)
+
+Síntoma:
+Con la app abierta en el mapa, al cortar el internet (modo avión) y esperar,
+no pasa nada: no aparece el overlay "Sin conexión" ni REINTENTAR, y el bus (si
+se estaba mostrando) queda congelado en la última posición recibida.
+
+Causa Raíz:
+`CONNECTION_TIMEOUT_MS = 10000` (burritoLocationStore.ts) solo protege el
+**primer snapshot**: se arma un `setTimeout` al arrancar `startTracking()` y
+se limpia en cuanto llega el primer dato. Durante la sesión no existe ningún
+watchdog: si Firebase deja de responder, el `onError` de
+`ref.on('value', …, onError)` **no se dispara** ante cortes de red, así que la
+UI sigue esperando silenciosamente. El timeout mezcla dos preguntas distintas:
+"¿hay Internet?" y "¿Firebase responde?".
+
+Solución:
+Fuera de alcance de C4.5 (cubría fallos del listener y estados vacíos de
+arranque). La detección de conectividad en sesión se abordará en C4.8
+(NetInfo a nivel de dispositivo); la decisión de UX del estado degradado, en
+C4.6.
+
+Validación (G24 Power):
+- Caso 3 (arranque sin internet): timeout 10s → overlay "Sin conexión" +
+  REINTENTAR. Correcto (C4.5).
+- Caso 4 (recuperación automática): abrir sin internet → overlay →
+  restaurar internet → el overlay desaparece solo, sin REINTENTAR, vuelven el
+  radar y el bus. Correcto (C4.5).
+- Caso 5 (pérdida durante la sesión): NO implementado → trasladado a
+  C4.8/C4.6.
+
+Archivo:
+User/src/store/burritoLocationStore.ts (límite documentado)
+
+Estado:
+Resuelto (C4.5) / Límite trasladado a C4.8 y C4.6
+
+Lección:
+El timeout de arranque y la conectividad son dos conceptos distintos. Un
+timeout que solo cubre el primer snapshot protege el arranque, no la sesión.
+Para detectar pérdida de red durante la sesión se necesita un sensor de
+conectividad del SO (NetInfo), no el error callback de Firebase, que no se
+dispara ante cortes de red.
 
