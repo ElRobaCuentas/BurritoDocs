@@ -252,7 +252,7 @@ src/
 |-------|-------------|-----------|
 | `userStore` | Zustand persist + AsyncStorage | uuid, username, avatar, rol (solo 'estudiante'), isLoggedIn |
 | `themeStore` | AsyncStorage manual | isDarkMode |
-| `mapStore` | Efímera | isFollowing, command (center/follow) |
+| `mapStore` | Efímera | command (center) |
 | `burritoLocationStore` | Efímera | locations (Record<string,BurritoLocation>), busMovementStates, movementDisplacements, movementMemory, isConnecting, connectionError, startTracking/stopTracking |
 | `drawerStore` | Efímera | isOpen, open/close |
 
@@ -446,7 +446,7 @@ Admin asigna:
 |---------|----------------|
 | `src/app/App.tsx` | Montaje global, splash nativo (bootsplash), hidratación, Firebase offline/online |
 | `src/features/map/screen/MapScreen.tsx` | Orquestador del mapa, inicializa tracking |
-| `src/features/map/components/Map.tsx` | Mapbox canvas, marcadores, ruta, radar, follow |
+| `src/features/map/components/Map.tsx` | Mapbox canvas, marcadores, ruta, radar |
 | `src/features/map/components/CustomDrawer.tsx` | Drawer animado con perfil, tema, feedback (sin admin) |
 | `src/features/map/services/map_service.ts` | Listener RTDB a `/ubicacion_buses`, envío de feedback |
 | `src/store/burritoLocationStore.ts` | Estado del tracking, dedup, clasificación moving/stopped/offline |
