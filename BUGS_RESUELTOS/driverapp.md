@@ -524,10 +524,14 @@ corrección.
 `isRunning()` es `true` se restaura `isSending` y la UI recupera "Compartiendo
 ubicación" + DETENER RECORRIDO.
 
-### Hallazgo B — `isActive=true` con timestamp congelado
+### Hallazgo B — `isActive=true` con timestamp congelado — RESUELTO (22/08)
 Puede quedar `isActive=true` en RTDB mientras el servicio está muerto y el
 timestamp deja de actualizarse. Validar en C4.6/T1 que BurritoUserApp oculta
 el bus por inactividad; si no lo oculta, abrir subtarea bloqueante.
+→ **Resuelto por diseño**: el heartbeat T4.1 garantiza timestamp fresco cada
+8 s (CASO 019, verificado en campo con deltas de 8003–8005 ms) y la UserApp
+oculta el bus por OFFLINE (estrategia C, ADR-020) cuando los datos caducan.
+Ambas piezas fusionadas a main (`99eafa0`, `916f123`, merge `aed7bf1`).
 
 ### Hallazgo C — Logout/revocación remota con tracking activo
 CERRAR SESIÓN (o revocación remota de sesión) con el servicio nativo vivo deja
