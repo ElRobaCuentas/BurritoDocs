@@ -271,11 +271,10 @@ actual del proyecto, planificadas en fases futuras del roadmap.
 |----------|--------|
 | La UserApp muestra un solo bus (multi-bus no implementado) | Planificado (Fase 1) |
 | No hay geofencing ni cierre automático de vueltas | Planificado (Fase 2) |
-| La UserApp y DriverApp usan paths de tracking distintos (`/ubicacion_burrito` vs `/ubicacion_buses`) | Planificado (Fase 1, migración del listener) |
 | iOS no soportado para DriverApp | Limitación de plataforma |
 | Test unitario de DriverApp (`__tests__/App.test.tsx`) está roto (hereda de archivo `../App` inexistente) | Por resolver |
-| El archivo `gradle.properties` contiene credenciales de release en texto plano (`burrito123`) | Requiere rotación de claves |
-| Pérdida de red **durante** la sesión: Firebase no dispara `onError` ante cortes de red y no existe watchdog en sesión (el timeout de 10s solo protege el primer snapshot) → la última posición queda congelada sin overlay | Planificado (C4.8 detección / C4.6 UX) |
+| El archivo `gradle.properties` contiene credenciales de release en texto plano (`burrito123`) | Requiere rotación de claves (Bloque 5, S3) |
+| Corte de red **durante** la sesión: Firebase no dispara `onError`; en DriverApp la recuperación depende del heartbeat T4.1 (catch-reset) y en UserApp el bus caducado se oculta por expiración de timestamp (estrategia C) | Atenuado por C4.6+T4.1 (22/08); escenario obligatorio del checklist de T1 |
 | El icono/marca del menú lateral usa el placeholder por defecto de react-navigation; el logo oficial solo llega al splash y al launcher | Por resolver (rebranding incompleto) |
 
 ## 11. Referencias
