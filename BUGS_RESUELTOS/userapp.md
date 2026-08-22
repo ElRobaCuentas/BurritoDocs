@@ -187,3 +187,54 @@ Para detectar pérdida de red durante la sesión se necesita un sensor de
 conectividad del SO (NetInfo), no el error callback de Firebase, que no se
 dispara ante cortes de red.
 
+
+## CASO 018 — Doble capa de splash y "flash cian" en la transición splash → Welcome (rebranding)
+
+Síntoma:
+Al arrancar la UserApp, la transición del splash hacia `WelcomeScreen`
+mostraba un destello de color (fondo cian `#00AEEF`) y el `StatusBar`
+cambiaba de color de golpe. Visualmente la app "parpadeaba" antes de
+mostrar la primera pantalla.
+
+Causa Raíz:
+Existían dos capas de splash superpuestas: el tema nativo de arranque
+(`BootTheme` de `react-native-bootsplash`) y un overlay JS
+(`AnimatedSplash.tsx`, animación Lottie) montado en `App.tsx` con
+`zIndex: 999` sobre `StyleSheet.absoluteFill`. Al terminar la animación
+JS, `onFinish` desmontaba el overlay y el fondo cian del
+`GestureHandlerRootView` quedaba expuesto en el instante previo al
+primer paint de `WelcomeScreen`. El `StatusBar` además dependía de
+`showAnimatedSplash`, forzando un cambio de color abrupto.
+
+Solución:
+Eliminar `AnimatedSplash.tsx` y dejar el splash nativo como capa única.
+En `App.tsx` el splash se oculta en `onReady` del `NavigationContainer`:
+
+```
+<NavigationContainer
+  onReady={() => {
+    requestAnimationFrame(() => BootSplash.hide({ fade: true }));
+  }}
+>
+```
+
+El splash nativo cubre arranque, hidratación y primer paint; el fade
+oculta la última capa cuando la navegación ya está lista. Se eliminó el
+`useState` de `showAnimatedSplash`, el overlay absoluto y el control de
+color del `StatusBar` ligado al splash.
+
+Archivos:
+src/app/App.tsx, src/app/screen/AnimatedSplash.tsx (eliminado),
+android/app/src/main/res/values/styles.xml,
+android/app/src/main/res/drawable-*/bootsplash_logo.png
+
+Estado:
+Resuelto — rama feat/rebranding/newlogo.
+
+Lección:
+Un splash gestionado desde JS por encima del splash nativo crea una
+doble capa que siempre termina exponiendo un flash al desmontarse.
+El splash debe ocultarse con un evento del ciclo de vida real del árbol
+de navegación (`onReady`), no con un temporizador ni con `onFinish` de
+una animación.
+
