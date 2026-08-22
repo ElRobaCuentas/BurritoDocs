@@ -894,6 +894,55 @@ AGENTS.md (UserApp, sección 9).
 
 ---
 
+### ADR-022: Desactivación de la funcionalidad "Seguir Bus" en la UserApp
+
+**Estado:** Aceptada.
+
+**Contexto:**
+
+La UserApp incluía un botón flotante (FAB con icono `crosshairs`) que
+centraba la cámara sobre el bus (zoom 17.5) y la mantenía anclada a su
+posición mediante un seguimiento continuo (`isFollowing` en `mapStore`,
+rama `'follow'` del comando y efecto de cámara en `Map.tsx`). La vista
+general por defecto del campus (zoom 15.1, centrada en la UNMSM) ya
+muestra el circuito completo de la ruta, por lo que el seguimiento
+cercano resultaba redundante para el caso de uso principal.
+
+**Decisión:**
+
+Funcionalidad dejada de lado por decisión del desarrollador. Se eliminó
+por completo el botón y toda su maquinaria asociada: props del `FAB`
+(`isFollowingBus`, `onFollowBus`, `isBusActive`), evento de analytics
+`bus_seguido`, rama `'follow'` del manejador de comandos, efecto de
+seguimiento continuo de cámara en `Map.tsx`, cancelación por gesto del
+usuario (`onRegionWillChange`) y el estado `isFollowing`/`setIsFollowing`
+de `mapStore`. Este ADR es el único registro histórico de que esta
+funcionalidad existió; el código anterior permanece recuperable en el
+historial de Git si algún día se decide reintroducirla.
+
+**Alternativas consideradas:**
+
+- Mantener la maquinaria dormida (solo ocultar el botón): descartado
+  porque deja estado muerto y un comando inalcanzable en un store
+  compartido, dificultando el mantenimiento.
+- Reutilizar el botón restante para centrar en el bus en lugar del
+  campus: descartado; se preserva el comportamiento actual de recentrado
+  a la vista general (comando `'center'`) sin cambios.
+
+**Consecuencias:**
+
+- El FAB reduce a un solo botón ("centrar mapa"). No existe forma de
+  anclar la cámara al bus; el usuario navega manualmente o usa la vista
+  general, donde todo el circuito es visible.
+- Desaparece el evento de analytics `bus_seguido`; cualquier tablero o
+  embudo que lo use deja de recibir datos desde esta versión.
+- `mapStore` queda reducido al comando `'center'`.
+
+**Referencias:** ARCHITECTURE.md (sección 4, tabla de stores;
+apéndice de archivos UserApp), Mockups §7c, MVP.md (flujo manual User).
+
+---
+
 ## Referencias
 
 | Documento | Relación |
