@@ -58,7 +58,7 @@ No requiere estar en el campus universitario.
 
 | Orden | Tarea | Proyecto | Depende de |
 |-------|-------|----------|------------|
-| 1 | T4.1: Heartbeat — setInterval(8000) para mantener timestamp fresco | DriverApp | T3.2 |
+| 1 | ✅ T4.1: Heartbeat — setInterval(8000) para mantener timestamp fresco | DriverApp | T3.2 |
 | 2 | T5.3: Timeout Check — ocultar buses sin actualización >60s | UserApp | T4.1 |
 | 3 | T4.2: Control de Turnos — botones INICIAR/FINALIZAR, creación de `/recorridos` | DriverApp | T4.1 |
 | 4 | T4.4: Multi-bus render completo — ShapeSource + SymbolLayer por cada bus activo | UserApp | T3.2 |

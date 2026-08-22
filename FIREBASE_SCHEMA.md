@@ -9,8 +9,6 @@ SQL ni otra fuente de verdad.
 - **Proyecto Firebase**: `burritounmsm`
 - **URL de RTDB**: `https://burritounmsm-default-rtdb.firebaseio.com`
 - **SDK**: `@react-native-firebase/database` v23.8.x en ambas apps
-- **Admin SDK**: `firebase-admin` con `serviceAccountKey.json` (solo para
-  el script de simulación Python)
 
 La base de datos se organiza en nodos independientes, cada uno con un
 propósito específico dentro del sistema. No hay relaciones foráneas
@@ -28,7 +26,6 @@ zonas horarias.
 | Origen | Método |
 |--------|--------|
 | JavaScript (DriverApp) | `Date.now()` |
-| Python (simulador) | `int(time.time() * 1000)` |
 | UserApp (server-side) | `database.ServerValue.TIMESTAMP` |
 
 Las fechas de asignación (turno diario) se almacenan como string
@@ -100,7 +97,7 @@ ya no se usa desde la migración multi-bus (T3.1).
 | `longitude` | number | Coordenada del GPS |
 | `heading` | number | Rumbo en grados |
 | `speed` | number | Velocidad |
-| `timestamp` | number | Unix epoch ms |
+| `timestamp` | number | Unix epoch ms — última actualización **publicada** por la DriverApp. Puede provenir del fix GPS o del heartbeat de presencia (T4.1). No debe leerse como "el momento exacto del GPS". |
 | `isActive` | boolean | `true` durante tracking, `false` al detener |
 
 **Inicialización desde admin**: al crear un bus en el panel
@@ -424,6 +421,23 @@ de Firebase.
 | `/choferes` | Solo admin | Solo admin | Gestión exclusiva de administradores |
 | `/buses` | Solo admin | Solo admin | Gestión exclusiva de administradores |
 
+### Discrepancias detectadas (S2)
+
+Comparación entre las reglas desplegadas en Firebase (`firebase-rules.json`)
+y la tabla de permisos anterior:
+
+1. **`/choferes` (.read)**: la tabla documenta `Solo admin`, pero las
+   reglas desplegadas permiten `.read: "auth != null"` — cualquier
+   usuario autenticado puede leer el directorio de conductores. El
+   `.write` sí coincide (solo admin).
+2. **Nodo legacy `/ubicacion_burrito`**: ausente de la tabla porque el
+   esquema lo considera "Heredado / ya no se usa", pero sigue presente
+   en las reglas desplegadas con `.read: true` (lectura pública).
+   Escritura denegada por defecto.
+
+Las reglas desplegadas no se modificaron en S2; esta subsección solo
+registra la divergencia detectada entre lo documentado y lo desplegado.
+
 ### Predicado admin en reglas
 
 ```json
@@ -462,6 +476,7 @@ autenticado.
 |-----------|----------|
 | `PROJECT_CONTEXT.md` | Visión general del sistema, propósito y limitaciones. |
 | `ARCHITECTURE.md` | Flujo de datos, ciclo de vida del tracking y topología del ecosistema. |
+| `firebase-rules.json` | Exportación exacta de las reglas RTDB desplegadas (captura de S2). |
 | `TROUBLESHOOTING.md` | Incidentes relacionados con Firebase: persistence, path mismatch, regresiones, async initializeApp. |
 | `DECISIONS.md` | ADR sobre persistence desactivada, arquitectura serverless, migración admin, fix async initializeApp. |
 | BurritoDriverApp/README.md | Setup de Firebase, permisos Android y google-services.json. |

@@ -150,7 +150,7 @@ Orden de ejecución dentro del bloque:
   * Depende de: nada (código UI puro, lógica intacta)
 
 ───────────────────────────────────────────────────────────────────
-P2 — T4.1: Heartbeat (DriverApp)
+[✅] P2 — T4.1: Heartbeat (DriverApp)
 ───────────────────────────────────────────────────────────────────
   * Rama: feat/driverapp/heartbeat
   * Proyecto: BurritoDriverApp
@@ -161,7 +161,9 @@ P2 — T4.1: Heartbeat (DriverApp)
   * Por qué es bloqueante: en una ruta real el bus para varias
     veces por minuto. Sin heartbeat, cada parada genera un falso
     "desconectado". Base de la confiabilidad de la señal.
-  * Commits:
+  * Estado: implementado en rama feat/driverapp/heartbeat (código +
+    docs sincronizados). Commits pendientes de aprobación del usuario.
+  * Commits (planeados):
     - feat(tracking): implementar intervalo de refresco de timestamp cada 8 segundos
     - docs(tracking): documentar watchdog y tiempos del ciclo en ARCHITECTURE
 

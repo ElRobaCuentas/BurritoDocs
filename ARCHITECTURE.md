@@ -191,7 +191,9 @@ index.js → src/app/App.tsx
 
 `App.tsx` orquesta: gestor de navegación, stores de Zustand, Firebase
 offline/online según estado de la app, Google Sign-In config, splash
-animado y gating de hidratación.
+nativo (react-native-bootsplash) y gating de hidratación. El splash se
+oculta en `onReady` del `NavigationContainer`, garantizando que la
+primera pantalla ya está pintada e hidratada (ADR-021).
 
 ### Navegación (post-poda)
 
@@ -213,7 +215,6 @@ eliminado completamente (ver FASE 4 de la migración).
 src/
 ├── app/
 │   ├── App.tsx                        # Entry point, Firebase offline/online
-│   ├── screen/AnimatedSplash.tsx      # Splash animado
 │   └── navigations/
 │       ├── StackNavigator.tsx         # Root navigator con auth gate (sin admin)
 │       └── DrawerNavigator.tsx        # Menú lateral con MapScreen
@@ -252,7 +253,7 @@ src/
 | `userStore` | Zustand persist + AsyncStorage | uuid, username, avatar, rol (solo 'estudiante'), isLoggedIn |
 | `themeStore` | AsyncStorage manual | isDarkMode |
 | `mapStore` | Efímera | isFollowing, command (center/follow) |
-| `burritoLocationStore` | Efímera | locations (Record<string,BurritoLocation>), busMovementStates, isConnecting, connectionError, startTracking/stopTracking |
+| `burritoLocationStore` | Efímera | locations (Record<string,BurritoLocation>), busMovementStates, movementDisplacements, movementMemory, isConnecting, connectionError, startTracking/stopTracking |
 | `drawerStore` | Efímera | isOpen, open/close |
 
 ### Módulo Admin (eliminado)
@@ -273,20 +274,39 @@ requestAllPermissions()
     ↓ (permisos OK)
 BackgroundJob.start(locationTask, options)
     ↓
-Geolocation.watchPosition()  ← cada ~3s
-    ↓
-sendLog()                    ← solo debug
-    ↓
-updateBusLocation(busId, {   ← firebase_service.ts
-    latitude, longitude,
-    heading, speed,
-    timestamp, isActive: true
-})
-    ↓
-Firebase RTDB                ← /ubicacion_buses/{busId}
-    ↓
-UserApp recibe el delta vía subscribeToBusLocations()
+locationTask:
+
+  GPS callback (watchPosition)
+      │
+      ├──────────────► writeLocation()          ← única ruta de escritura
+      │
+  Heartbeat (8 s, T4.1)
+      │
+      └──────────────► writeLocation()
+
+                    │
+                    ▼
+        updateBusLocation(busId, { latitude, longitude,
+                                   heading, speed,
+                                   timestamp, isActive: true })
+                    │
+                    ▼
+                Firebase RTDB         ← /ubicacion_buses/{busId}
+                    │
+                    ▼
+     UserApp recibe el delta vía subscribeToBusLocations()
 ```
+
+Notas sobre el ciclo de tracking:
+
+- `writeLocation()` es la **única** función que escribe en RTDB. Tanto el
+  callback del GPS como el heartbeat pasan por ella para no divergir
+  (T4.1).
+- El heartbeat (cada 8 s) solo escribe si no hubo otra escritura reciente
+  (no duplica el trabajo del GPS) y si ya existe una `lastLocation` de la
+  primera lectura GPS.
+- `timestamp` es la última actualización publicada, no el instante del fix
+  GPS. Con bus quieto lo refresca el heartbeat.
 
 ### Flujo de visualización (UserApp — multi-bus)
 
@@ -301,11 +321,23 @@ MapService.subscribeToBusLocations()  ← se suscribe a /ubicacion_buses
     ↓
 ref.on('value', callback)            ← Firebase empuja deltas
     ↓
-Callback recibe Record<string, BurritoLocation> { placa1: {lat, lng, ...}, placa2: {...}, ... }
+Callback recibe Record<string, BurritoLocation> { placa1: {lat, lng, speed, ...}, placa2: {...}, ... }
     ↓
 Filtro dedup por placa (timestamp > actual por cada bus)
     ↓
-Set en burritoLocationStore.locations
+C4.6 EXPERIMENTAL — estrategia C (decide EN MOVIMIENTO/EN PARADERO):
+    dist = Haversine(pos previa, pos nueva)
+    dtMs = timestamp nuevo − timestamp previo
+    evidence = vCalc > 1 m/s  OR  (speed > 2 m/s AND dist > 2 m)
+    vCalc = dist / (dtMs/1000)
+    Memoria por placa: evidencia → moving; 2 parejas consecutivas sin
+    evidencia → stopped (STOP_CONFIRM_PAIRS=2). El desplazamiento de 8 m
+    (estrategia A) NO participa en esta decisión.
+    Diagnóstico temporal: CALIB_LOG_ENABLED → console.log [C4.6] por
+    actualización (placa, dist, dtMs, vCalc, speed, evidence, transición,
+    weakCount). Se elimina tras la validación en campo.
+    ↓
+Set en burritoLocationStore.locations + busMovementStates + movementMemory
     ↓
 Map.tsx deriva burritoLocation del primer bus activo (fallback)
     ↓
@@ -412,10 +444,7 @@ Admin asigna:
 
 | Archivo | Responsabilidad |
 |---------|----------------|
-| `src/app/App.tsx` | Montaje global, splash, hidratación, Firebase offline/online |
-| `src/app/navigations/StackNavigator.tsx` | Auth gating declarativo (sin admin) |
-| `src/app/navigations/DrawerNavigator.tsx` | Menú lateral con MapScreen |
-| `src/features/app/screen/AnimatedSplash.tsx` | Splash animado (Lottie) |
+| `src/app/App.tsx` | Montaje global, splash nativo (bootsplash), hidratación, Firebase offline/online |
 | `src/features/map/screen/MapScreen.tsx` | Orquestador del mapa, inicializa tracking |
 | `src/features/map/components/Map.tsx` | Mapbox canvas, marcadores, ruta, radar, follow |
 | `src/features/map/components/CustomDrawer.tsx` | Drawer animado con perfil, tema, feedback (sin admin) |
@@ -501,11 +530,13 @@ Estado inicial: app cerrada, sin sesión
     ↓
 11. locationTask ejecuta Geolocation.watchPosition()
     ↓
-12. Cada ~3s: updateBusLocation(busId, { lat, lng, heading, speed, timestamp, isActive: true })
+12. GPS callback o heartbeat (T4.1, cada 8 s) → writeLocation()
+    → updateBusLocation(busId, { lat, lng, heading, speed, timestamp, isActive: true })
     ↓
 13. Firebase RTDB recibe escritura en /ubicacion_buses/{busId}
     ↓
-13a. Cada fix de GPS emite un pulso (PRO_LOCATION_PULSE) hacia la UI
+13a. Cada escritura (GPS o heartbeat) emite un pulso (PRO_LOCATION_PULSE)
+    hacia la UI antes de escribir
     ↓
 13b. Watchdog (C3): intervalo 10s, timeout 30s sin pulso
     ├── Pulso presente: no hace nada

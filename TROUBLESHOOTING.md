@@ -205,8 +205,8 @@ Cada caso documenta: **síntoma**, **causa**, **diagnóstico**,
 | Síntoma | El bus aparece en el mapa en una posición que no se actualiza |
 | Causa | La DriverApp perdió conexión de red, o el conductor cerró la app sin presionar "DETENER" |
 | Diagnóstico | Verificar el timestamp de la última actualización en Firebase RTDB para `/ubicacion_buses/{busId}` |
-| Solución | La UserApp clasifica el bus como `stopped` si el timestamp tiene más de 12 segundos. Si `isActive === false` en RTDB, lo clasifica como `offline` y no lo muestra |
-| Prevención | Timeout check automático (Fase 4 del roadmap) proporcionará una solución más robusta |
+| Solución | La UserApp clasifica el bus como `offline` si el timestamp supera 30s (`BUS_STALE_AFTER_MS`, C4.6) o si `isActive === false` en RTDB, y no lo muestra. Con timestamp reciente y datos utilizables, la decisión EN MOVIMIENTO/EN PARADERO usa la estrategia C experimental (C4.6): distancia + Δt + speed condicional + memoria de estado (2 parejas consecutivas sin evidencia → PARADERO), con parámetros de CALIBRACIÓN PENDIENTE. El desplazamiento mínimo de 8 m (`MOVEMENT_THRESHOLD_M`, estrategia A) ya NO decide el estado en vivo: se conserva únicamente para comparación offline A vs C. En el primer snapshot usa fallback de edad (12s) |
+| Prevención | El heartbeat del Driver (T4.1, ADR-019) ya elimina las pausas del GPS con bus quieto. Timeout check automático (Fase 4 del roadmap) proporcionará una solución más robusta para cierres abruptos |
 
 ## 8. Mapbox
 
@@ -246,11 +246,11 @@ Cada caso documenta: **síntoma**, **causa**, **diagnóstico**,
 
 | Campo | Descripción |
 |-------|-------------|
-| Síntoma | La UserApp se queda en el splash animado y no muestra el mapa ni el login |
-| Causa | `userStore` o `themeStore` no completaron la hidratación desde AsyncStorage. El `NavigationContainer` no se renderiza hasta que ambos `_hasHydrated` sean `true` |
+| Síntoma | La UserApp se queda en el splash (logo sobre fondo azul) y no muestra el mapa ni el login |
+| Causa | `userStore` o `themeStore` no completaron la hidratación desde AsyncStorage. El `NavigationContainer` no se renderiza hasta que ambos `_hasHydrated` sean `true`, y el splash nativo (`react-native-bootsplash`) solo se oculta en `onReady` del contenedor (ADR-021) |
 | Diagnóstico | Revisar la consola por errores de hidratación o corrupción de AsyncStorage |
 | Solución | Forzar reinicio de la app. Si persiste, borrar los datos de AsyncStorage desde Settings → Apps → BurritoUserApp → Storage → Clear data |
-| Prevención | App.tsx maneja errores de hidratación y setea `_hasHydrated: true` en el callback `onRehydrateStorage` |
+| Prevención | App.tsx maneja errores de hidratación y setea `_hasHydrated: true` en el callback `onRehydrateStorage`. El splash se oculta vía `BootSplash.hide({ fade: true })` dentro de `onReady` |
 
 ### Dark mode no persiste al cerrar la app
 
@@ -272,11 +272,11 @@ actual del proyecto, planificadas en fases futuras del roadmap.
 | La UserApp muestra un solo bus (multi-bus no implementado) | Planificado (Fase 1) |
 | No hay geofencing ni cierre automático de vueltas | Planificado (Fase 2) |
 | La UserApp y DriverApp usan paths de tracking distintos (`/ubicacion_burrito` vs `/ubicacion_buses`) | Planificado (Fase 1, migración del listener) |
-| El simulador Python es la única fuente de datos para la UserApp en ausencia de DriverApp física | Heredado, dejará de usarse tras Fase 1 |
 | iOS no soportado para DriverApp | Limitación de plataforma |
 | Test unitario de DriverApp (`__tests__/App.test.tsx`) está roto (hereda de archivo `../App` inexistente) | Por resolver |
 | El archivo `gradle.properties` contiene credenciales de release en texto plano (`burrito123`) | Requiere rotación de claves |
 | Pérdida de red **durante** la sesión: Firebase no dispara `onError` ante cortes de red y no existe watchdog en sesión (el timeout de 10s solo protege el primer snapshot) → la última posición queda congelada sin overlay | Planificado (C4.8 detección / C4.6 UX) |
+| El icono/marca del menú lateral usa el placeholder por defecto de react-navigation; el logo oficial solo llega al splash y al launcher | Por resolver (rebranding incompleto) |
 
 ## 11. Referencias
 
