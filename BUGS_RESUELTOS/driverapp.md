@@ -448,6 +448,63 @@ el conductor nunca quede atrapado en un spinner sin límite.
 
 ---
 
+## CASO 019 — El heartbeat escribía cada ~16s en paradero en vez de cada 8s (T4.1)
+
+Síntoma:
+Tras implementar el heartbeat T4.1 (`setInterval` de `HEARTBEAT_INTERVAL_MS =
+8000`), la Prueba 1 (20/08/2026) mostró que la cadencia real de escrituras en
+RTDB durante PARADERO era de **~16.25 s** (huecos deterministas de 16 s entre
+timestamps consecutivos), el doble de la cadencia configurada. En MOVIMIENTO la
+cadencia era correcta (~8 s). Consecuencia directa: la frescura percibida por
+la UserApp se degradaba exactamente cuando el bus está detenido, que es el
+escenario crítico para distinguir "bus parado" de "bus desaparecido".
+
+Causa Raíz:
+Carrera ε entre el marcador de frescura y el chequeo del intervalo.
+`writeLocation` asignaba `lastWriteAt = Date.now()` DESPUÉS del `await` de la
+escritura en RTDB, mientras el tick del heartbeat evaluaba
+`Date.now() - lastWriteAt < HEARTBEAT_INTERVAL_MS` de forma independiente. Si
+el tick vencía mientras una escritura estaba en vuelo (o justo antes de que el
+`await` resolviera y actualizara el marcador), la condición daba "vencida",
+disparaba una segunda escritura y reiniciaba el ciclo desfasado: dos ciclos de
+8 s colisionados producían un hueco efectivo de ~16 s. En PARADERO —sin GPS
+updates reales que re-frescaran el marcador— el desfase era determinista y se
+acumulaba visible; en MOVIMIENTO cada update GPS enmascaraba el problema.
+
+Solución (refinamiento de T4.1):
+- `lastWriteAt = Date.now()` se fija ANTES del `await` de la escritura: el
+  instante del INTENTO es la marca de frescura, no el instante de confirmación
+  de RTDB. Así ningún tick puede evaluar la condición con el marcador
+  "viejo" mientras la escritura está en vuelo.
+- En el `catch` de la escritura fallida, `lastWriteAt = 0`: si RTDB rechaza,
+  el siguiente tick reintenta de inmediato en vez de esperar otro intervalo
+  completo creyendo que los datos están frescos.
+- Sin cambios en el intervalo (8000 ms), ni en `writeLocation` como API, ni en
+  el esquema de RTDB.
+
+Archivo:
+Driver/src/screen/SendCoordinates.tsx
+
+Estado:
+Resuelto — verificado empíricamente con captura directa de RTDB (22/08/2026),
+dos sesiones independientes (`stat_rtdb.jsonl`, `stat2_rtdb.jsonl`, muestreo a
+1 Hz sobre `/ubicacion_buses`):
+- Sesión 1 (paradero sostenido): deltas de timestamp 8003–8005 ms, **cero
+  valores ≥16 s** en toda la sesión.
+- Sesión 2: idem, cadencia estable 8003–8005 ms durante todo el paradero.
+- Antes del fix: medias de ~16.25 s documentadas en los reportes de Prueba 1.
+- `npx tsc --noEmit` exit 0. Lint sin errores nuevos. Commit `99eafa0`
+  (rama `feat/driverapp/heartbeat`). Decisión registrada en ADR-019.
+
+Lección:
+Nunca fijar un marcador de frescura DESPUÉS de un `await` cuando un intervalo
+independiente evalúa ese mismo marcador: el hueco entre intento y confirmación
+es justamente la ventana donde el intervalo decide mal. La marca debe capturar
+el instante del intento, y el camino de error debe invalidar el marcador para
+no postergar el reintento.
+
+---
+
 ## Hallazgos de auditoría pendientes (sin corrección)
 
 Hallazgos detectados durante la validación de C4.2. Se registran por separado
