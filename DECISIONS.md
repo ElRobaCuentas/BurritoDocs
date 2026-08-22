@@ -327,8 +327,9 @@ empezar y "DETENER TODO" para finalizar. Al detener, se escribe
 - La única fuente confiable de fin de turno es la pulsación del botón
   "DETENER TODO".
 - Si el conductor cierra la app abruptamente, el bus queda como activo
-  en RTDB. La UserApp mitiga esto clasificando ubicaciones con
-  timestamp antiguo como "stopped" (burritoLocationStore).
+  en RTDB. La UserApp mitiga esto clasificando ubicaciones como
+  "offline" cuando el timestamp expira (30s, C4.6) o "stopped" cuando
+  no hay desplazamiento entre publicaciones (burritoLocationStore).
 - Timeout check automático está planificado en Fase 4 del roadmap.
 
 **Referencias:** ARCHITECTURE.md (sección 8), ROADMAP.md (Fase 4).
@@ -590,6 +591,68 @@ TROUBLESHOOTING.md (sección 10), admin_service.ts.
 
 ---
 
+### ADR-021: Splash nativo único (react-native-bootsplash) en lugar de AnimatedSplash
+
+**Estado:** Aceptada.
+
+**Contexto:**
+
+La UserApp tenía una doble capa de splash: el tema nativo de arranque
+(`BootTheme` de `react-native-bootsplash`) y un overlay JS
+(`AnimatedSplash.tsx`, animación Lottie) montado en `App.tsx` con
+`zIndex: 999` sobre `StyleSheet.absoluteFill`. Al terminar la animación
+JS, `onFinish` desmontaba el overlay y el fondo `#00AEEF` (cian) del
+`GestureHandlerRootView` quedaba expuesto en el instante de la
+transición hacia `WelcomeScreen`, provocando un "flash cian". El
+`StatusBar` además dependía de `showAnimatedSplash`, forzando un cambio
+de color abrupto.
+
+**Decisión:**
+
+Eliminar `AnimatedSplash.tsx` por completo y dejar el splash nativo de
+`react-native-bootsplash` (dependencia ya presente, `^7.1.0`) como única
+capa. El splash se oculta en `onReady` del `NavigationContainer`:
+
+```typescript
+<NavigationContainer
+  onReady={() => {
+    requestAnimationFrame(() => BootSplash.hide({ fade: true }));
+  }}
+>
+```
+
+De esta forma el splash nativo cubre el arranque, la hidratación de los
+stores y el primer paint del árbol de navegación; al ocultarse con fade,
+la primera pantalla ya está lista y no hay flash. El `StatusBar` deja de
+depender del estado del splash.
+
+**Alternativas consideradas:**
+
+- Mantener el overlay JS ajustando solo los colores: descartado, no
+  elimina la doble capa ni el flash de transición.
+- Ocultar el splash con un temporizador fijo: descartado, no garantiza
+  que la navegación ya esté pintada (mismo problema de flash o splash
+  recortado).
+- Ocultar apenas completada la hidratación (`_hasHydrated`): descartado,
+  podía revelar la pantalla antes del primer paint de React Navigation.
+
+**Consecuencias:**
+
+- Una sola capa de splash, controlada por el ciclo de vida real del
+  árbol de navegación (`onReady`).
+- El arranque muestra el logo oficial, regenerado desde
+  `assets/splash_logo.png` en `drawable-*/bootsplash_logo.png` y
+  `assets/bootsplash/*`. El launcher usa `mipmap-*/ic_launcher*.png`.
+- Se eliminó `src/app/screen/AnimatedSplash.tsx`; `App.tsx` ya no usa
+  `useState` para el splash ni el overlay absoluto.
+- No se agregó ninguna dependencia nueva: `react-native-bootsplash`
+  ya estaba en `package.json` (`^7.1.0`).
+
+**Referencias:** ARCHITECTURE.md (sección 4), BUGS_RESUELTOS/userapp.md
+(CASO 018).
+
+---
+
 ## ADR Planificadas
 
 ### ADR-013: Geofencing con Punto Cero Dinámico
@@ -670,6 +733,164 @@ Firebase RTDB (o del backend propio, cuando exista) para proporcionar:
 **Dependencia:** sin fecha estimada. Visión de largo plazo.
 
 **Referencias:** ROADMAP.md (Visión de Largo Plazo).
+
+---
+
+### ADR-019: Heartbeat de presencia en la DriverApp (T4.1)
+
+**Estado:** Aceptada.
+
+**Contexto:**
+
+El GPS publica vía `watchPosition` con `distanceFilter: 2` e
+`interval: 3000`. Cuando el bus está quieto (semáforo, paradero), el
+GPS no emite callbacks con la misma frecuencia: se observaron pausas
+reales de 13–26 s y una de ~36 s. En la UserApp, una pausa de ese
+tamaño hace que el bus cruce el umbral de expiración (C4.6,
+`BUS_STALE_AFTER_MS = 30000`) y desaparezca del mapa aunque el
+servicio siga vivo. Además, el watchdog C3 usaba los pulsos GPS como
+señal de vida: con el bus estacionado podía reiniciar el servicio en
+falso.
+
+El problema no era el umbral de la UserApp sino la falta de garantía
+de publicación periódica desde el Driver.
+
+**Decisión:**
+
+Implementar un heartbeat de presencia de **8 s**
+(`HEARTBEAT_INTERVAL_MS = 8000`) dentro de `locationTask`
+(`SendCoordinates.tsx`). El heartbeat escribe en RTDB la **última
+posición conocida** solo si no hubo otra escritura reciente, y emite
+`PRO_LOCATION_PULSE` (pre-write) igual que el GPS, de modo que el
+watchdog C3 mide "servicio vivo" y no "GPS activo".
+
+Una única función `writeLocation(coords)` es responsable de escribir
+en RTDB; tanto el callback del GPS como el heartbeat la usan. Se
+evita así que dos caminos de escritura diverjan con el tiempo.
+
+**Separación conceptual adoptada:**
+
+```
+Presencia  → heartbeat del Driver (publica periódico)
+Movimiento → desplazamiento entre posiciones publicadas
+Expiración → C4.6 en la UserApp (timestamp demasiado viejo)
+```
+
+El `timestamp` mantiene su nombre y pasa a significar "última
+actualización publicada por el Driver", no "momento del fix GPS".
+
+**Alternativas consideradas:**
+
+- Subir `BUS_STALE_AFTER_MS` en la UserApp: descartado, no ataca la
+  causa. El problema está aguas arriba, en la periodicidad del Driver.
+- Heartbeat con segunda ruta de escritura separada: descartado, dos
+  caminos de escritura divergen; se impone un único `writeLocation`.
+- `onDisconnect` de Firebase: postergado (ver ADR-010).
+
+**Consecuencias:**
+
+- Un bus estacionado se mantiene visible (timestamp fresco) y pasa a
+  `stopped` por movimiento (C4.6) en vez de `offline` por expiración.
+- El watchdog C3 ya no reinicia el servicio con bus quieto.
+- Costo de batería mínimo: una escritura extra cada 8 s solo cuando el
+  GPS no escribió.
+- Pendiente de validación en campo con el Motorola (Grupo A): verificar
+  que el heartbeat publica realmente con el GPS quieto.
+
+**Referencias:** ARCHITECTURE.md (sección 5 y 8), FIREBASE_SCHEMA.md
+(sección 3), TAREAS_HISTORICO.md (P2 — T4.1), ROADMAP.md (Bloque A).
+
+---
+
+### ADR-020: C4.6 — Estrategia C experimental para MOVIMIENTO/PARADERO
+
+**Estado:** EXPERIMENTAL — pendiente de validación en campo. NO es una
+decisión definitiva.
+
+**Contexto:**
+
+La medición interna de calibración (20/08/2026, ~5 min, 61 parejas)
+reveló dos hechos que invalidan los enfoques simples:
+
+1. **Speed congelada:** durante una parada real de 73 s, el GPS del
+   Motorola mantuvo `speed = 2.78 m/s` en RTDB (nunca bajó a 0), porque
+   el heartbeat escribe la última posición conocida. La estrategia B
+   (speed sola) fracasa: en simulación dejó 58 de 60 lecturas como
+   EN MOVIMIENTO durante la parada.
+2. **Coordenadas congeladas:** con el bus quieto, la posición publicada
+   no varió (jitter 0), pero el timestamp seguía fresco por el
+   heartbeat (cadencia moda 3 s).
+
+Además, la cadencia GPS real es variable (moda 3 s, con lag gaps de
+hasta 21 s), por lo que un umbral fijo de desplazamiento (estrategia A,
+8 m) no puede distinguir "avanza 2 m en 3 s" (casi detenido) de "jitter
+GPS en parada".
+
+**Decisión (provisional, sujeta a la prueba de campo):**
+
+- **Definición de producto:** EN PARADERO = vehículo físicamente
+  detenido. Un vehículo lento (incluso 1 km/h con desplazamiento real)
+  es EN MOVIMIENTO. Prohibido usar umbrales semánticos de velocidad
+  ("menos de X km/h = parado"). Sin esperas artificiales largas
+  (10/15/30 s).
+- **Estrategia C** (implementada en UserApp, módulo
+  `src/features/map/utils/movement.ts`):
+
+  ```
+  vCalc = dist / (dtMs/1000)
+  evidence = vCalc > 1 m/s  OR  (speed > 2 m/s AND dist > 2 m)
+  ```
+
+  - `vCalc` combina distancia y tiempo: un bus a 10 km/h entre fixes
+    de 3 s produce vCalc ~2.8 > 1 → evidencia.
+  - `speed` es señal complementaria y **condicional**: solo cuenta si
+    hubo desplazamiento real (dist > 2 m), descartando la speed
+    congelada del heartbeat.
+  - **Memoria/histeresis mínima:** evidencia → EN MOVIMIENTO inmediato;
+    sin evidencia se cuentan parejas consecutivas y solo tras 2
+    (`STOP_CONFIRM_PAIRS = 2`) se pasa a EN PARADERO.
+- **Parámetros EXPERIMENTALES (CALIBRACIÓN PENDIENTE):** 1 m/s, 2 m/s,
+  2 m, 2 parejas. Ninguno es valor definitivo; se ajustarán con los
+  datos de la prueba de campo. No documentarlos como definitivos.
+- **8 m (`MOVEMENT_THRESHOLD_M`, estrategia A) queda fuera de la
+  decisión en vivo.** Se conserva únicamente para comparación offline
+  A vs C, tests y simulación sobre los mismos datos.
+- **Plumbing de speed:** la UserApp ahora recibe `speed` del snapshot
+  de RTDB (`speed?: number`, `speed: entry.speed ?? 0`). Sin cambios
+  en DriverApp ni en el esquema Firebase (el campo ya existía).
+- **Offline independiente:** la expiración (30 s, `isActive`) no se
+  mezcla con MOVIMIENTO/PARADERO; la estrategia C solo decide entre
+  esos dos estados con datos utilizables.
+- **Diagnóstico temporal:** `CALIB_LOG_ENABLED` registra por cada
+  actualización `{placa, dist, dtMs, vCalc, speed, evidence,
+  previousStatus, status, transition, weakCount}`. Se elimina al
+  terminar la evaluación; no es logging de producción.
+
+**Alternativas consideradas y descartadas (con evidencia de la
+calibración):**
+
+- Estrategia A (umbral fijo 8 m): 5 transiciones en la prueba interna
+  contra 2 reales (falsos PARADERO/MOVIMIENTO por cadencia variable).
+- Estrategia B (speed sola): 58/60 EN MOVIMIENTO durante la parada de
+  73 s por speed congelada.
+
+**Limitación conocida y aceptada (a medir en campo):**
+
+- A ~1 km/h entre fixes de 3 s (dist ~0.83 m), vCalc ~0.28 < 1 y
+  speed < 2 m/s → la estrategia C NO detecta movimiento. Es el caso
+  que la prueba de campo debe responder si se puede o no resolver.
+
+**Consecuencias:**
+
+- La UserApp distingue semánticamente vehículo detenido (EN PARADERO)
+  de vehículo lento (EN MOVIMIENTO) solo si la señal GPS lo permite;
+  el resultado final depende de la prueba de campo.
+- Cualquier ajuste de parámetros posterior a la prueba se documentará
+  aquí y se marcará como VALIDADO solo con evidencia de campo.
+
+**Referencias:** ARCHITECTURE.md (sección 5), FIREBASE_SCHEMA.md
+(sección 3), TROUBLESHOOTING.md (Ubicación congelada), ROADMAP.md,
+AGENTS.md (UserApp, sección 9).
 
 ---
 
