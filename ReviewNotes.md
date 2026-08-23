@@ -890,3 +890,28 @@ por lo que son inofensivas bajo las reglas nuevas.
 
 **Estado:**
 Pendiente (post-MVP).
+
+### [ ] Eliminar registro legacy `com.burritouserapp` de Firebase Console
+
+**Fecha:** 23/08/2026
+
+**Motivo:**
+UserApp se registró originalmente como `com.burritouserapp`
+(app_id `b9b8149c`). El 19/03/2026 se renombró
+applicationId a `com.sythor.burritoapp` pero el
+google-services.json fue editado a mano en vez de
+re-registrar. Hoy UserApp ya usa el registro canónico
+`com.sythor.burritoapp` (`7beb07f9`) con sus 3 SHA-1s.
+El registro `b9b8149c` (`com.burritouserapp`) queda como
+huérfano legacy.
+
+**Cuando ocurra:**
+- Firebase Console > ⚙ > Tus apps > eliminar
+  `com.burritouserapp` (app_id `b9b8149c`)
+- Verificar que ninguna app o dependencia lo use
+  (DriverApp usa su propio registro `810e95c0`)
+- Confirmar en Analytics que los streams de UserApp
+  apuntan a `com.sythor.burritoapp`
+
+**Estado:**
+Pendiente (post-MVP; sin impacto funcional).
