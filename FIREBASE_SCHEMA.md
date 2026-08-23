@@ -48,20 +48,26 @@ transformación.
 
 | Nodo | Tipo de clave | Ejemplo |
 |------|--------------|---------|
-| `/ubicacion_burrito` | Heredado (único bus, ya no se usa) | — |
 | `/ubicacion_buses/{placa}` | Placa del bus | `ABC-123` |
 | `/choferes/{dni}` | DNI del conductor | `12345678` |
+| `/choferes_uids/{uid}` | Auth UID de Firebase (índice uid→DNI) | `abc123...` |
 | `/buses/{placa}` | Placa del bus | `ABC-123` |
 | `/asignaciones/{pushId}` | Push ID generado por Firebase | `-Nx9...` |
 | `/usuarios/{uid}` | Auth UID de Firebase | `abc123...` |
 | `/comentarios/{pushId}` | Push ID generado por Firebase | `-Ny8...` |
 | `/administradores/{auth.uid}` | Auth UID de Firebase | `def456...` |
 
+> Nota: el nodo legacy `/ubicacion_burrito` fue eliminado de las reglas de
+> seguridad el 23/08/2026; su dato residual en RTDB está pendiente de
+> borrado manual desde Consola (ver `ReviewNotes.md`).
+
 ## 3. Nodos de Tracking
 
 Actualmente el sistema utiliza un único nodo de tracking consolidado
-(`/ubicacion_buses/{placa}`). El nodo heredado `/ubicacion_burrito`
-ya no se usa desde la migración multi-bus (T3.1).
+(`/ubicacion_buses/{placa}`). El nodo heredado `/ubicacion_burrito` dejó
+de usarse desde la migración multi-bus (T3.1) y el 23/08/2026 fue
+eliminado de las reglas de seguridad (queda denegado por defecto;
+borrado del dato pendiente en Consola).
 
 ### `/ubicacion_buses/{placa}` (activo)
 
@@ -141,6 +147,31 @@ administrativo, se escribe `{ isActive: false }` en
 cuenta de Firebase Auth con email `${dni}@burritodriver.com` y
 contraseña igual al DNI. Usa una instancia secundaria de Auth
 (`SecondaryApp`) para no cerrar la sesión del admin.
+
+### `/choferes_uids/{uid}` (nuevo, 23/08/2026)
+
+- **Propósito**: índice inverso uid→DNI que permite a las Security Rules
+  verificar que un usuario autenticado es un conductor registrado, sin
+  exponer el catálogo `/choferes` (que tiene `.read` amplio). Es la base
+  de la autorización de escritura sobre `/ubicacion_buses` (ADR-023).
+- **Escritura**: `admin_service.createChofer()` (DriverApp y AdminWeb)
+  escribe `{uid: dni}` inmediatamente después de crear la cuenta Auth y
+  el registro en `/choferes`. Postura **fail-closed**: es la última
+  escritura de la transacción; si falla, el chofer existe pero no podrá
+  publicar ubicación hasta reparar el índice manualmente.
+- **Lectura**: ninguna desde cliente (`.read: false`). Solo las reglas
+  lo consultan internamente vía `root.child('choferes_uids')`.
+- **Población inicial**: backfill manual desde Consola para conductores
+  preexistentes (hecho el 23/08/2026).
+- **Estructura**:
+
+```json
+{
+  "choferes_uids": {
+    "1u7VkXlh0ZaqE2ysbf024i2QXPo1": "11223344"
+  }
+}
+```
 
 ### `/buses/{placa}`
 
@@ -321,10 +352,11 @@ desde el cliente (`.write: false`).
 
 ## 7. Estado del Esquema
 
-El esquema se encuentra consolidado tras la migración multi-bus (T3.1)
-y la migración del panel admin a DriverApp (FASE 1-5). El nodo heredado
-`/ubicacion_burrito` ya no se utiliza; todo el tracking fluye a través
-de `/ubicacion_buses/{placa}`.
+El esquema se encuentra consolidado tras la migración multi-bus (T3.1),
+la migración del panel admin a DriverApp (FASE 1-5) y el endurecimiento
+de las reglas de seguridad por UID (23/08/2026, ADR-023). El nodo
+heredado `/ubicacion_burrito` fue eliminado de las reglas; todo el
+tracking fluye a través de `/ubicacion_buses/{placa}`.
 
 ### Nodos activos (flujo actual)
 
@@ -332,12 +364,13 @@ de `/ubicacion_buses/{placa}`.
 |------|--------|-------------|-------------------|
 | `/asignaciones` | Definitivo | DriverApp (admin) | Se mantiene. |
 | `/choferes` | Definitivo | DriverApp (admin) | Se mantiene. |
+| `/choferes_uids` | Definitivo | DriverApp/AdminWeb (createChofer) | Índice uid→DNI para reglas (ADR-023). Backfill manual para preexistentes. |
 | `/buses` | Definitivo | DriverApp (admin) | Se mantiene. |
 | `/administradores` | Definitivo | Firebase Console | Se mantiene. Solo escritura manual. |
 | `/usuarios` | Definitivo | UserApp | Se mantiene. |
 | `/comentarios` | Provisional | UserApp | Sin cambios previstos inmediatos. |
-| `/ubicacion_buses` | Definitivo | DriverApp (conductor) | Nodo único de tracking. |
-| `/ubicacion_burrito` | Heredado | — | Ya no se usa. Nodo legacy. |
+| `/ubicacion_buses` | Definitivo | DriverApp (conductor) | Nodo único de tracking. Escritura restringida a conductores indexados y admins (ADR-023). |
+| `/ubicacion_burrito` | Eliminado de reglas | — | Denegado por defecto desde el 23/08/2026. Borrado del dato pendiente en Consola. |
 
 ### Nodos planificados (no existen en RTDB)
 
@@ -409,6 +442,38 @@ auto-asignarse `rol: 'admin'`. `/administradores` es una fuente de
 verdad inmutable desde el cliente, poblada exclusivamente por consola
 de Firebase.
 
+### Modelo de autorización conductor (23/08/2026, ADR-023)
+
+La escritura sobre `/ubicacion_buses` exige que el usuario autenticado
+sea un conductor registrado. El predicado central de autorización
+conductor es:
+
+```
+root.child('choferes_uids').child(auth.uid).exists()
+```
+
+Esta expresión verifica que el UID del usuario autenticado exista como
+clave en `/choferes_uids/`. El índice se escribe automáticamente al
+crear un chofer (`createChofer()`) y tiene `.write` exclusivo de admin,
+por lo que un usuario cualquiera no puede auto-indexarse. La regla
+completa de escritura del tracking admite conductores indexados **o**
+admins:
+
+```json
+".write": "auth != null && (root.child('administradores').child(auth.uid).exists() || root.child('choferes_uids').child(auth.uid).exists())"
+```
+
+**Alternativa descartada**: autorizar por dominio de email
+(`auth.token.email.matches('.*@burritodriver.com')`). Se rechazó porque
+`SignUpScreen.tsx:86` acepta emails arbitrarios sin verificación
+(`emailVerified` no se consulta ni exige en ningún repo), por lo que un
+atacante podía registrarse con cualquier correo `@burritodriver.com`.
+
+**Postura fail-closed**: `/choferes_uids/{uid}` se escribe al final de
+`createChofer()`; si esa escritura falla, el chofer existe pero no
+puede publicar ubicación hasta reparar el índice manualmente desde
+Consola.
+
 ### Tabla de permisos por nodo
 
 | Nodo | .read | .write | Notas |
@@ -417,26 +482,28 @@ de Firebase.
 | `/comentarios` | `false` | `auth != null` | Solo escritura, lectura desde Consola |
 | `/administradores` | `auth != null` | `false` | Solo lectura. Escritura exclusiva desde Consola |
 | `/asignaciones` | `auth != null` | Solo admin | DriverApp necesita lectura, admin escribe |
-| `/ubicacion_buses` | `true` | `auth != null` | Lectura pública, escritura conductores |
-| `/choferes` | Solo admin | Solo admin | Gestión exclusiva de administradores |
+| `/ubicacion_buses` | `true` | Conductor indexado o admin | Lectura pública; escritura vía `/choferes_uids` o `/administradores` (ADR-023) |
+| `/choferes` | `auth != null` | Solo admin | Catálogo legible por usuarios autenticados; escritura exclusiva de admin |
+| `/choferes_uids` | `false` | Solo admin | Índice uid→DNI para reglas (ADR-023); sin lectura de cliente |
 | `/buses` | Solo admin | Solo admin | Gestión exclusiva de administradores |
 
-### Discrepancias detectadas (S2)
+### Discrepancias detectadas (S2) y resolución
 
 Comparación entre las reglas desplegadas en Firebase (`firebase-rules.json`)
 y la tabla de permisos anterior:
 
-1. **`/choferes` (.read)**: la tabla documenta `Solo admin`, pero las
+1. **`/choferes` (.read)**: la tabla documentaba `Solo admin`, pero las
    reglas desplegadas permiten `.read: "auth != null"` — cualquier
    usuario autenticado puede leer el directorio de conductores. El
-   `.write` sí coincide (solo admin).
-2. **Nodo legacy `/ubicacion_burrito`**: ausente de la tabla porque el
-   esquema lo considera "Heredado / ya no se usa", pero sigue presente
-   en las reglas desplegadas con `.read: true` (lectura pública).
-   Escritura denegada por defecto.
-
-Las reglas desplegadas no se modificaron en S2; esta subsección solo
-registra la divergencia detectada entre lo documentado y lo desplegado.
+   `.write` sí coincide (solo admin). **Estado: divergencia vigente**;
+   la tabla fue actualizada el 23/08/2026 para reflejar lo desplegado.
+   Restringir la lectura a solo-admin queda como decisión futura si el
+   catálogo deja de ser necesario para clientes.
+2. **Nodo legacy `/ubicacion_burrito`**: estaba presente en las reglas
+   con `.read: true`. **RESUELTO el 23/08/2026**: el bloque fue
+   eliminado de las reglas publicadas (denegado por defecto) y retirado
+   del espejo `docs/firebase-rules.json`. Borrado del dato residual en
+   RTDB pendiente de Consola.
 
 ### Predicado admin en reglas
 

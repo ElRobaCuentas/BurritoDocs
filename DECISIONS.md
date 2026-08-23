@@ -943,6 +943,76 @@ apéndice de archivos UserApp), Mockups §7c, MVP.md (flujo manual User).
 
 ---
 
+### ADR-023: Autorización de escritura en `/ubicacion_buses` por vínculo uid→DNI (`/choferes_uids`)
+
+**Estado:** Aceptada e implementada (23/08/2026).
+
+**Contexto:**
+
+Hasta esta fecha, la escritura del nodo de tracking era
+`.write: "auth != null"` (decisión aceptada para el MVP, ADR-017):
+cualquier usuario autenticado podía sobrescribir la posición de
+cualquier bus, suplantando al conductor real. La auditoría de seguridad
+del 23/08 identificó además que la alternativa "barata" de restringir
+por dominio de email (`@burritodriver.com`) era inviable: `SignUpScreen.tsx:86`
+acepta emails arbitrarios sin verificación (`emailVerified` no se
+consulta ni exige en ninguno de los tres repos), por lo que un atacante
+podía registrarse como `atacante@burritodriver.com` y pasar el filtro.
+El catálogo `/choferes/{dni}` tampoco sirve directamente a las reglas:
+sus claves son DNI, no UID, y las Security Rules solo conocen el
+`auth.uid` del solicitante.
+
+**Decisión:**
+
+Introducir un índice inverso `/choferes_uids/{uid} = dni`, escrito
+automáticamente por `createChofer()` (DriverApp `e09ec2f`, AdminWeb
+`9c5c288`) inmediatamente después de crear la cuenta Auth y el registro
+en `/choferes`. Las reglas publicadas quedan así:
+
+- `/ubicacion_buses` `.write`: `auth != null && (root.child('administradores').child(auth.uid).exists() || root.child('choferes_uids').child(auth.uid).exists())`
+- Nuevo bloque `/choferes_uids`: `.read: false`, `.write` solo admin.
+- Eliminado el bloque legacy `/ubicacion_burrito` (denegado por defecto).
+
+Los choferes preexistentes se poblaron con backfill manual desde
+Consola (2 entradas, verificadas). La lectura pública del tracking se
+mantiene intacta (requisito funcional de UserApp).
+
+**Alternativas consideradas:**
+
+- Autorizar por dominio de email: descartada; sin verificación de
+  email es trivialmente burlable (ver Contexto).
+- Autorizar conductor→bus específico (que cada uid solo pueda escribir
+  SU bus asignado del día): descartada para MVP porque exige evaluar
+  `/asignaciones` con condición de fecha actual dentro de las rules,
+  algo no expresable de forma fiable (el roll-over diario de
+  `fecha = hoy` requiere escritura diaria que solo puede hacer un
+  admin). El password=DNI sigue siendo la debilidad real previa; se
+  deja anotada como mejora post-MVP.
+
+**Consecuencias:**
+
+- Un usuario autenticado ya no puede publicar ubicación salvo que su
+  uid esté indexado en `/choferes_uids` o sea admin. Suplantación de
+  bus desde cuentas de estudiante: cerrada.
+- Postura fail-closed: si falla la última escritura de `createChofer()`
+  (el índice), el chofer existe pero no puede transmitir hasta reparar
+  el índice manualmente desde Consola.
+- Todo chofer creado desde una build vieja de AdminWeb desplegada
+  nacerá SIN índice (no podrá trackear): obligatorio redeployar
+  Firebase Hosting tras el merge.
+- `/choferes_uids` duplica parcialmente información de `/choferes`;
+  mantener ambos sincronizados es responsabilidad de `createChofer()`.
+- La matriz de validación quedó probada end-to-end el 23/08: simulador
+  de reglas (estudiante denegado, conductor permitido, admin permitido)
+  + pruebas reales web y móvil con choferes nuevo (99999999) y
+  backfilleado (44332211).
+
+**Referencias:** FIREBASE_SCHEMA.md (§2 claves primarias, §4 nodo
+`/choferes_uids`, §9 modelo de autorización), ReviewNotes.md (limpieza
+post-MVP), MVP.md (§3 Seguridad, Bloque 2 S3), MVP_CHANGELOG.md.
+
+---
+
 ## Referencias
 
 | Documento | Relación |

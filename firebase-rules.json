@@ -1,22 +1,13 @@
 {
   "rules": {
-    "ubicacion_burrito": {
-      ".read": true
-    },
     "usuarios": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
         ".write": "auth != null && auth.uid === $uid"
       }
     },
-    "comentarios": {
-      ".read": false,
-      ".write": "auth != null"
-    },
-    "administradores": {
-      ".read": "auth != null",
-      ".write": false
-    },
+    "comentarios": { ".read": false, ".write": "auth != null" },
+    "administradores": { ".read": "auth != null", ".write": false },
     "asignaciones": {
       ".read": "auth != null",
       ".write": "auth != null && root.child('administradores').child(auth.uid).exists()",
@@ -24,10 +15,14 @@
     },
     "ubicacion_buses": {
       ".read": true,
-      ".write": "auth != null"
+      ".write": "auth != null && (root.child('administradores').child(auth.uid).exists() || root.child('choferes_uids').child(auth.uid).exists())"
     },
     "choferes": {
       ".read": "auth != null",
+      ".write": "auth != null && root.child('administradores').child(auth.uid).exists()"
+    },
+    "choferes_uids": {
+      ".read": false,
       ".write": "auth != null && root.child('administradores').child(auth.uid).exists()"
     },
     "buses": {

@@ -328,7 +328,7 @@ Pendiente de revisión futura.
 
 ## FIREBASE_SCHEMA
 
-### [ ] Eliminar `/ubicacion_burrito`
+### [x] Eliminar `/ubicacion_burrito`
 
 Fecha: 09/06/2026
 
@@ -353,7 +353,17 @@ Cuando ocurra:
   - AGENTS.md
 
 Estado:
-Pendiente.
+Resuelto el 23/08/2026. El bloque de la regla
+`.read: true` fue eliminado de las reglas publicadas
+en Firebase Console (el nodo queda denegado por
+defecto para todo cliente) y del espejo
+`docs/firebase-rules.json`. FIREBASE_SCHEMA.md
+actualizado ("Nodos de Tracking", "Estado del
+Esquema", tabla de permisos §9). Las referencias en
+READMEs/AGENTS.md ya habían sido corregidas durante
+la migración de paths (22/08). Pendiente menor:
+borrar el dato residual `/ubicacion_burrito` en RTDB
+desde Consola (ver item nuevo en este archivo).
 
 ---
 
@@ -820,3 +830,63 @@ Requiere revisión si:
 
 **Estado:**
 Revisión futura cuando cambie el stack o plataforma.
+
+---
+
+## Firebase Console (RTDB y Auth)
+
+### [ ] Borrar el dato residual de `/ubicacion_burrito` en RTDB
+
+**Fecha:** 23/08/2026
+
+**Motivo:**
+Las reglas publicadas el 23/08/2026 ya no incluyen
+el nodo `/ubicacion_burrito`, por lo que queda
+denegado por defecto e inaccesible desde clientes.
+El dato físico aún existe en la base.
+
+**Cuando ocurra:**
+- Firebase Console > Realtime Database > borrar
+  `/ubicacion_burrito`
+- Verificar que ninguna herramienta interna lo lea
+
+**Estado:**
+Pendiente (limpieza; sin impacto funcional).
+
+### [ ] Redesplegar AdminWeb a Firebase Hosting tras el merge de `feat/security/rtdb-uid-authorization`
+
+**Fecha:** 23/08/2026
+
+**Motivo:**
+`https://burritounmsm.web.app/` sigue sirviendo la
+build vieja SIN la escritura del índice
+`/choferes_uids`. Todo chofer creado desde el deploy
+viejo nacerá sin índice y no podrá transmitir
+ubicación (postura fail-closed, ADR-023).
+
+**Cuando ocurra:**
+- Mergear la rama a main
+- `npm run build && firebase deploy --only hosting`
+
+**Estado:**
+Pendiente (bloquea creación de choferes vía web
+desplegada con tracking operativo).
+
+### [ ] Limpieza post-MVP de cuentas Auth de prueba antiguas
+
+**Fecha:** 23/08/2026
+
+**Motivo:**
+Quedan cuentas Auth inertes de pruebas tempranas:
+DNI 12345678, DNI 87654321 y un posible registro
+temprano bajo `chofer@burritounmsm.com`. No tienen
+entrada en `/choferes_uids` ni asignaciones activas,
+por lo que son inofensivas bajo las reglas nuevas.
+
+**Cuando ocurra:**
+- Confirmar con el usuario qué cuentas conservar
+- Borrar usuarios desde Console > Authentication
+- Borrar sus registros si existen en `/choferes`
+
+**Estado:**
+Pendiente (post-MVP).
