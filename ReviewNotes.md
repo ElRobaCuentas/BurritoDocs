@@ -949,4 +949,75 @@ Estos keystores solo se usan para builds de desarrollo.
 **Acción:** documentar. No requiere cambios de código ni Console.
 
 **Estado:**
-Documentado (23/08/2026).
+Documentado (23/08/2026). Re-verificado en auditoría completa del
+ecosistema (23/08/2026): sigue siendo riesgo bajo y aceptado para el
+MVP. Rotación obligatoria antes de publicar en Play Store.
+
+---
+
+## Seguridad
+
+### Contraseña de choferes = su DNI (riesgo aceptado del MVP)
+
+**Fecha:** 23/08/2026
+
+**Motivo:**
+La auditoría completa del ecosistema confirmó que `AdminService.createChofer()`
+(ambos repos, Driver y AdminWeb) crea cuentas Firebase Auth con
+`email = ${dni}@burritodriver.com` y `password = dni`. Un DNI es un
+identificador público de 8 dígitos (~27 bits de entropía): cualquiera que
+conozca el DNI de un chofer puede suplantarlo.
+
+**Decisión (23/08/2026):**
+Riesgo **aceptado** para este MVP:
+- Las cuentas actuales son de prueba, no conductores reales.
+- Convertir ahora a password temporal + cambio obligatorio introduce lógica
+  nueva y riesgo de romper el flujo a días de la presentación.
+- La autorización real de escritura NO depende de la contraseña sino de las
+  reglas RTDB vía `/choferes_uids` (ADR-023), que siguen intactas.
+
+**Condición dura:**
+Antes de registrar conductores reales en producción, este esquema DEBE
+reemplazarse (password aleatoria temporal + cambio obligatorio en primer
+login, o flujo passwordless). No publicar a producción con DNI como contraseña.
+
+**Estado:**
+Documentado como riesgo aceptado. Post-MVP obligatorio.
+
+---
+
+### Resumen de la auditoría completa del ecosistema (23/08/2026)
+
+Auditoría de seguridad sobre DriverApp, UserApp y AdminWeb enmarcada en la
+definición funcional del MVP (conductor opera jornada completa; estudiante ve
+ubicación en tiempo real).
+
+**Resueltos antes del cierre del MVP:**
+| ID | Hallazgo | Commit(s) |
+|----|----------|-----------|
+| W1 | Panel debug visible en release → `__DEV__` | User `19b118a` |
+| W2 | `CALIB_LOG_ENABLED=true` → `false` | User `c133518` |
+| W4 | ProGuard/R8 deshabilitado → habilitado + probado en dispositivo | Driver `490349a`, User `d444f37` |
+| W5 | Servicio tracking `exported="true"` → `"false"` + verificado | Driver `02ef1da` |
+| C7 | Reglas RTDB versionadas — ya resuelto desde S3 (`docs/firebase-rules.json`) | verificado |
+
+**Documentados como riesgo aceptado:**
+- C1: contraseña = DNI (ver sección anterior).
+- C3: keystore `burrito123` (ver sección Keystore; rotar pre-Play Store).
+- "EN MOVIMIENTO" con bus quieto en interiores: deriva GPS interior vence los
+  umbrales experimentales de C4.6 (ADR-020, calibración pendiente). Al aire
+  libre se atenúa. Post-MVP.
+
+**Post-MVP (no bloquean, listos en backlog):**
+C4 (createChofer no atómico), C5 (google-services.json multi-app),
+W3 (console.error), W6 (rate limiting login), W7 (admin check client-side —
+la seguridad real vive en las reglas RTDB), W8 (AvatarPicker `.set()`),
+W9 (ForgotPassword falso éxito), W10 (validación email), W11 (spam feedback),
+W12 (toggleChoferStatus no limpia `choferes_uids` — **revisar antes de
+producción**: hoy `activo:false` NO revoca la autorización de escritura),
+W13 (createBus sobreescribe ubicación), W14 (security headers Hosting),
+W15 (race condition secondary app).
+
+**Estado:**
+Cierre de seguridad del MVP completo (23/08/2026). Arquitectura congelada;
+sigue prueba E2E integral.
