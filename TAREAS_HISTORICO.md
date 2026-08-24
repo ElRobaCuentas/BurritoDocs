@@ -113,8 +113,7 @@ tripartito, poda de UserApp, reglas RTDB, documentación.
 0.5 — Congeladas (pasan a BLOQUE 7 — DIFERIDAS)
 ───────────────────────────────────────────────────────────────────
 
-[⏸️] T1.2: Eliminar Debug Panel — Congelada por orden del
-  desarrollador. Se mantiene visible hasta pre-producción.
+[✅] T1.2: Eliminar Debug Panel — Ejecutada. Flag `SHOW_DEBUG_PANEL=false` en Map.tsx; reactivable en una línea.
 
 [⏸️] T2.3: Asegurar Credenciales de Firma — Diferida hasta
   empaquetar v1.2.0.
@@ -290,19 +289,24 @@ T4.4: Multi-bus render completo
     - docs(map): documentar ciclo de vida del renderizado de ShapeSources en ARCHITECTURE
 
 ───────────────────────────────────────────────────────────────────
-T1.2: Eliminar Debug Panel (sale de congelada)
+T1.2: Eliminar Debug Panel (EJECUTADA — flag, no extirpación)
 ───────────────────────────────────────────────────────────────────
-  * Rama: chore/userapp/remove-debug-panel
+  * Rama: main (directo, sin rama dedicada)
   * Proyecto: BurritoUserApp
-  * ¿Qué es/Qué resuelve?: Remueve el panel "RADAR DE DATOS RAW"
-    (verde/cyan) de Map.tsx que no debe verse cuando la UserApp
-    se exponga a estudiantes reales.
-  * Nota: se ejecuta solo cuando se decide exponer UserApp a
-    estudiantes. Durante el piloto interno (solo equipo dev) puede
-    permanecer visible.
+  * ¿Qué es/Qué resuelve?: Desactivar el panel "RADAR DE DATOS RAW"
+    (verde/cyan) de Map.tsx antes de exponer la app a estudiantes.
+  * Mecanismo: flag `SHOW_DEBUG_PANEL = false` en Map.tsx; el JSX
+    queda como `{SHOW_DEBUG_PANEL && __DEV__ && (...)}`. Para
+    reactivar en desarrollo, cambiar a `true` (un cambio de línea).
+    Estado, alimentación de logs y estilos se mantienen intactos.
+  * Motivo del cambio de enfoque: panel es herramienta de
+    calibración de C4.6 (ADR-020); eliminarlo rompe la validación
+    en campo. Flag preserva reactivación instantánea.
   * Commits:
-    - chore(ui): extirpar panel de debug radar de datos raw en Map
-    - docs(ui): actualizar PROJECT_CONTEXT reflejando la limpieza de la interfaz
+    - fix(map): reafirmar cámara inicial al centro UNMSM tras carga del mapa (regresión de a7a2f5a)
+    - chore(ui): desactivar panel debug radar de datos raw via flag (T1.2)
+  * Nota: la rama planificada chore/userapp/remove-debug-panel se
+    descartó por completo; el cambio se hizo directo en main.
 
 ═══════════════════════════════════════════════════════════════════
 BLOQUE 4 — MEJORAS FUNCIONALES (DriverApp)
@@ -459,10 +463,10 @@ BLOQUE 7 — DIFERIDAS
 Tareas sin fecha asignada. No bloquean nada.
 
 ───────────────────────────────────────────────────────────────────
-[⏸️] T1.2: Eliminar Debug Panel (reenviada desde Bloque 0)
-  * Estado: Congelada hasta pre-producción
-  * Disparador: cuando la UserApp vaya a exponerse a estudiantes
-    reales. No antes.
+[✅] T1.2: Eliminar Debug Panel (ejecutada desde Bloque 0)
+  * Estado: Ejecutada — flag `SHOW_DEBUG_PANEL=false` en Map.tsx
+  * Disparador: lanzamiento a pruebas con estudiantes reales
+  * Ver: entrada detallada en Bloque 0 (línea 293)
 
 [⏸️] T2.3: Asegurar Credenciales de Firma
   * Estado: Diferida

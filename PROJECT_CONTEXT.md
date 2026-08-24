@@ -122,6 +122,12 @@ Firebase Realtime Database actúa como el bus de datos. La UserApp nunca escribe
   DriverApp no está probada ni soportada en iOS.
 - **Render de un solo marcador**: el backend multi-bus ya está implementado (T3.1), pero la UI del mapa aún muestra un único marcador (seleccionando el bus activo más reciente). El render multi-marcador completo está planificado en T4.4.
 - **Bootstrap admin manual**: crear un administrador requiere ir a Firebase
+
+---
+
+### UI de diagnóstico
+
+- **Panel "RADAR DE DATOS RAW"**: desactivado en launches (`SHOW_DEBUG_PANEL = false`, Map.tsx). Reactivar en desarrollo: cambiar a `true`. Limitado a builds debug por `__DEV__` (hallazgo W1, auditoría de seguridad).
   Console, crear la cuenta Auth y copiar el UID a `/administradores/{uid}`.
   Aceptable por el número reducido de admins.
 

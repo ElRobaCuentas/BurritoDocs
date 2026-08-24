@@ -995,7 +995,7 @@ ubicación en tiempo real).
 **Resueltos antes del cierre del MVP:**
 | ID | Hallazgo | Commit(s) |
 |----|----------|-----------|
-| W1 | Panel debug visible en release → `__DEV__` | User `19b118a` |
+| W1 | Panel debug visible en release → `__DEV__` + flag `SHOW_DEBUG_PANEL=false` (T1.2 ejecutada) | User `19b118a`, `SHOW_DEBUG_PANEL` |
 | W2 | `CALIB_LOG_ENABLED=true` → `false` | User `c133518` |
 | W4 | ProGuard/R8 deshabilitado → habilitado + probado en dispositivo | Driver `490349a`, User `d444f37` |
 | W5 | Servicio tracking `exported="true"` → `"false"` + verificado | Driver `02ef1da` |
