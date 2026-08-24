@@ -915,3 +915,38 @@ huérfano legacy.
 
 **Estado:**
 Pendiente (post-MVP; sin impacto funcional).
+
+---
+
+## Keystore
+
+### Documentar estado del keystore y contraseña histórica
+
+**Fecha:** 23/08/2026
+
+**Motivo:**
+La contraseña del keystore release (`burrito123`) aparece
+en el historial de git (commit anterior a `a2235a9`,
+27/07/2026, en `android/gradle.properties`). El archivo
+keystore NO está en Git (`.gitignore` lo cubre).
+
+**Estado actual:**
+- `my-release-key.keystore`: existe localmente en ambos
+  repos (gitignored)
+- `keystore.properties`: existe localmente (gitignored)
+- SHA-1 debug: `5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25`
+- SHA-1 release User: `44:19:4D:4E:A5:22:80:B1:DB:0C:5E:AD:46:44:F2:F2:B6:08:CB:58`
+- SHA-1 release Driver: `A3:32:3F:70:FF:34:EE:0A:46:C7:EC:95:3D:9B:ED:87:50:03:E3:29`
+
+**Riesgo:**
+Bajo. Sin el archivo keystore, la contraseña es inútil.
+Estos keystores solo se usan para builds de desarrollo.
+
+**Cuándo rotar:**
+- Solo si se publica en Play Store sin App Signing de Google
+- O si hay sospecha de compromiso del archivo local
+
+**Acción:** documentar. No requiere cambios de código ni Console.
+
+**Estado:**
+Documentado (23/08/2026).
