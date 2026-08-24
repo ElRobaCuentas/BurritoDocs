@@ -202,10 +202,11 @@ contraseña igual al DNI. Usa una instancia secundaria de Auth
 
 - **Propósito**: relación temporal entre un conductor y un bus para un
   turno diario. Clave generada por `push()` de Firebase.
-- **Escritura**: `admin_service.createAsignacion()` (desde DriverApp).
+- **Escritura**: `admin_service.createAsignacion()` (desde AdminWeb y
+  DriverApp). Requiere administrador autenticado: si no existe sesión,
+  la operación falla sin escribir en RTDB.
 - **Lectura**: `admin_service.subscribeToAsignacionesHoy()` (listener
-  continuo desde DriverApp) y DriverApp (consulta puntual con
-  `orderByChild('choferId')`).
+  continuo) y DriverApp (consulta puntual con `orderByChild('choferId')`).
 - **Estructura**:
 
 ```json
@@ -215,7 +216,9 @@ contraseña igual al DNI. Usa una instancia secundaria de Auth
       "choferId": "12345678",
       "busId": "ABC-123",
       "fecha": "2025-06-09",
-      "activo": true
+      "activo": true,
+      "createdAt": 1776948195000,
+      "createdBy": "jDhveoruZpgX5ZksfrWd5qcrDcp1"
     }
   }
 }
@@ -225,8 +228,10 @@ contraseña igual al DNI. Usa una instancia secundaria de Auth
 |-------|------|-------------|
 | `choferId` | string | DNI del conductor (coincide con clave en `/choferes`) |
 | `busId` | string | Placa del bus (coincide con clave en `/buses`) |
-| `fecha` | string | Fecha del turno en formato `YYYY-MM-DD` |
+| `fecha` | string | Fecha del turno en formato `YYYY-MM-DD`. Es independiente de `createdAt`: el admin puede preparar asignaciones de un día futuro |
 | `activo` | boolean | `true` mientras el turno está vigente |
+| `createdAt` | number | Unix timestamp en milisegundos del momento de creación (`Date.now()`). Formato legible solo en la UI (`toLocaleString('es-PE', { timeZone: 'America/Lima' })`) |
+| `createdBy` | string | UID de Firebase Auth del administrador que creó la asignación. Coincide con una clave de `/administradores`. Es auditoría, no seguridad: la autorización real sigue siendo `auth.uid` en `/administradores` vía reglas RTDB |
 
 **Validación de exclusividad**: al crear una asignación, el servicio
 verifica que ni el chofer ni el bus tengan otra asignación activa para
@@ -234,6 +239,10 @@ la misma fecha.
 
 **Cancelación**: al cancelar, se establece `activo: false`. El registro
 no se elimina.
+
+**Nota**: asignaciones creadas antes de esta mejora no tienen
+`createdAt` ni `createdBy`; ambos campos son opcionales y las pantallas
+los renderizan condicionalmente.
 
 ### `/administradores/{auth.uid}` (nuevo)
 

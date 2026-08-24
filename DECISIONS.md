@@ -1013,6 +1013,88 @@ post-MVP), MVP.md (§3 Seguridad, Bloque 2 S3), MVP_CHANGELOG.md.
 
 ---
 
+### ADR-024: Auditoría mínima en `/asignaciones` (`createdAt` epoch + `createdBy` UID) y semántica de "desactivar"
+
+**Estado:** Aceptada e implementada (24/08/2026).
+
+**Contexto:**
+
+El modelo de gestión del MVP permitía crear asignaciones sin rastro de
+quién las creó ni cuándo. Ante un dato inconsistente (asignación
+inesperada, turno duplicado) no había forma de reconstruir qué ocurrió.
+Se evaluó añadir campos de auditoría y se definieron tres decisiones de
+diseño:
+
+1. **Formato del timestamp**: se descartó guardar la hora como string
+   localizado (`"24/08/2026, 07:43:15 a. m."`). Un string así impide
+   ordenar cronológicamente, consultar por rangos o calcular duraciones
+   sin parsear. Se respeta la convención de FIREBASE_SCHEMA.md §2:
+   en RTDB se guarda Unix timestamp en milisegundos (`Date.now()`); el
+   formato legible es responsabilidad exclusiva de la UI
+   (`toLocaleString('es-PE', { timeZone: 'America/Lima' })`), que
+   convierte al mostrar. Datos estructurados en DB, presentación
+   localizada en pantalla.
+2. **Autoría sin fallback falso**: `createdBy` toma siempre el UID real
+   de la sesión admin (`auth.currentUser.uid`, vía `getAuth()` en
+   AdminWeb y `auth()` en DriverApp). Si no hay administrador
+   autenticado, `createAsignacion()` falla con error explícito ("No hay
+   administrador autenticado.") y no se escribe nada. Se descartó el
+   fallback `|| 'unknown'` porque introduciría un dato falso en la base.
+   No se creó `/administradores_uids`: ya existe `/administradores/{uid}`
+   como índice por UID (a diferencia de `/choferes`, indexado por DNI,
+   que sí necesitó `/choferes_uids`).
+3. **Alcance limitado a asignaciones**: `choferes` y `buses` NO reciben
+   campos de auditoría por ahora. Criterio: solo se guarda un dato si
+   cambia una decisión operativa del MVP. La fecha de alta de un
+   chofer/bus no condiciona nada hoy; agregarla sería construir el
+   post-MVP antes de validar el piloto.
+
+**Decisión complementaria — semántica de "desactivar" (Opción A):**
+
+Se documenta formalmente que desactivar conductor o bus
+(`activo: false` en `/choferes/{dni}` o `/buses/{placa}`) afecta solo la
+**elegibilidad futura**: el elemento deja de aparecer en los selectores
+de nueva asignación, pero NO revoca la autorización de escritura GPS ni
+interrumpe un recorrido ya iniciado. El tracking continúa hasta que el
+conductor presione DETENER TODO. Razones:
+
+- Desactivar es decisión administrativa; cancelar asignación es acción
+  operativa. Son conceptos distintos y usan herramientas distintas.
+- Revocar el GPS en caliente (Opción B) dejaría al bus desaparecido del
+  mapa sin aviso al conductor ni al estudiante: peor escenario de
+  producto que el falso positivo administrativo.
+- Con un único admin, el caso de uso real ("sacar a alguien AHORA") no
+  existe aún; si existiera, post-MVP: botón "Forzar detención" que
+  escriba `isActive: false` directo en `/ubicacion_buses/{placa}`.
+
+**Alternativas consideradas:**
+
+- String localizado en RTDB: descartada (ver punto 1).
+- `createdBy: 'unknown'` como fallback: descartada (dato falso).
+- Auditoría también en choferes/buses: diferida al post-MVP.
+- Revocación GPS inmediata al desactivar: descartada para MVP (Opción B,
+  ver arriba).
+
+**Consecuencias:**
+
+- Payload de `/asignaciones` gana `createdAt` (number, epoch ms) y
+  `createdBy` (string, UID). Ambos opcionales: registros previos siguen
+  siendo válidos y las pantallas renderizan condicionalmente.
+- `fecha` conserva su significado propio (día del turno); `createdAt`
+  registra el momento de creación. Puede darse `fecha: 2026-08-25` con
+  `createdAt` del 24/08 23:50 si el admin prepara turnos con antelación.
+- `createdBy` es auditoría, no seguridad: un cliente malicioso podría
+  escribir un UID ajeno en ese campo si las reglas lo permitieran. La
+  autorización real sigue determinada por `auth.uid` en
+  `/administradores` vía Security Rules (ADR-017/023).
+- Congelamiento: tras este cambio no se agregan más funcionalidades
+  administrativas al MVP; el siguiente hito es E2E de campo.
+
+**Referencias:** FIREBASE_SCHEMA.md (§4 nodo `/asignaciones`),
+ReviewNotes.md (semántica de desactivación), MVP_CHANGELOG.md.
+
+---
+
 ## Referencias
 
 | Documento | Relación |

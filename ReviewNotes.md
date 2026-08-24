@@ -1021,3 +1021,30 @@ W15 (race condition secondary app).
 **Estado:**
 Cierre de seguridad del MVP completo (23/08/2026). Arquitectura congelada;
 sigue prueba E2E integral.
+
+### Semántica de "desactivar" (Opción A) + auditoría mínima en asignaciones (24/08/2026)
+
+**Desactivar conductor/bus = elegibilidad futura, no corte inmediato.**
+`activo: false` en `/choferes/{dni}` o `/buses/{placa}` solo saca al
+elemento de los selectores de nueva asignación. NO revoca la autorización
+GPS ni interrumpe un recorrido activo: el tracking continúa hasta DETENER
+TODO. Decisión de producto deliberada (ADR-024): desactivar es decisión
+administrativa; cancelar asignación es la acción operativa. La revocación
+en caliente queda como post-MVP ("Forzar detención" escribiendo
+`isActive: false` en `/ubicacion_buses/{placa}`). Esto formaliza el
+comportamiento anotado en W12: para el MVP es semántica deseada, no bug.
+Pendiente post-MVP real de W12: decidir si desactivar debe limpiar
+`choferes_uids` cuando se implemente la revocación.
+
+**Auditoría mínima en `/asignaciones`.** Nuevos campos `createdAt`
+(epoch ms en RTDB; formato legible solo en UI con
+`toLocaleString('es-PE', { timeZone: 'America/Lima' })`) y `createdBy`
+(UID real del admin; sin sesión la creación falla — sin fallback
+`'unknown'`). Implementado en AdminWeb y DriverApp (rama
+`feat/asignacion-auditoria`). Registros previos sin estos campos siguen
+siendo válidos. Choferes/buses NO reciben auditoría en el MVP (no cambia
+decisiones operativas hoy). Detalle completo: ADR-024,
+FIREBASE_SCHEMA.md §4.
+
+**Congelamiento:** tras este cambio se cierra la fase funcional del MVP;
+siguiente hito: E2E de campo.
