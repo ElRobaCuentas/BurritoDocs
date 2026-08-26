@@ -113,8 +113,9 @@ tripartito, poda de UserApp, reglas RTDB, documentación.
 0.5 — Congeladas (pasan a BLOQUE 7 — DIFERIDAS)
 ───────────────────────────────────────────────────────────────────
 
-[⏸️] T1.2: Eliminar Debug Panel — Congelada por orden del
-  desarrollador. Se mantiene visible hasta pre-producción.
+[⏸️] T1.2: Eliminar Debug Panel — Panel desactivado vía flag
+  (`SHOW_DEBUG_PANEL=false`) para lanzamiento a pruebas. La
+  eliminación completa se difiere para post-piloto.
 
 [⏸️] T2.3: Asegurar Credenciales de Firma — Diferida hasta
   empaquetar v1.2.0.
@@ -290,18 +291,16 @@ T4.4: Multi-bus render completo
     - docs(map): documentar ciclo de vida del renderizado de ShapeSources en ARCHITECTURE
 
 ───────────────────────────────────────────────────────────────────
-T1.2: Eliminar Debug Panel (sale de congelada)
+T1.2: Eliminar Debug Panel (parcial — desactivado vía flag)
 ───────────────────────────────────────────────────────────────────
-  * Rama: chore/userapp/remove-debug-panel
+  * Rama: chore/userapp/remove-debug-panel (descartada, cambio directo en main)
   * Proyecto: BurritoUserApp
-  * ¿Qué es/Qué resuelve?: Remueve el panel "RADAR DE DATOS RAW"
-    (verde/cyan) de Map.tsx que no debe verse cuando la UserApp
-    se exponga a estudiantes reales.
-  * Nota: se ejecuta solo cuando se decide exponer UserApp a
-    estudiantes. Durante el piloto interno (solo equipo dev) puede
-    permanecer visible.
+  * ¿Qué es/Qué resuelve?: Desactiva el panel "RADAR DE DATOS RAW"
+    (verde/cyan) de Map.tsx antes de exponer la app a estudiantes.
+  * Mecanismo: flag `SHOW_DEBUG_PANEL = false` en Map.tsx. Reactivar
+    en desarrollo: cambiar a `true`. Gate `__DEV__` conservado (W1).
   * Commits:
-    - chore(ui): extirpar panel de debug radar de datos raw en Map
+    - chore(ui): desactivar panel debug RADAR DE DATOS RAW via flag (d3d90c0)
     - docs(ui): actualizar PROJECT_CONTEXT reflejando la limpieza de la interfaz
 
 ═══════════════════════════════════════════════════════════════════
