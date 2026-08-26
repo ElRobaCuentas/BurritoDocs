@@ -378,10 +378,10 @@ El circuito del transporte universitario interno de la UNMSM recorre la Ciudad U
 | 04 | **Paradero 04** | Facultad de Química / Comedor | Zona de alta concurrencia estudiantil |
 | 05 | **Paradero 05** | Facultad de Ingeniería Industrial | Facultad con mayor densidad de estudiantes |
 | 06 | **Paradero 06** | Puerta 2 | Acceso vehicular principal |
-| 07 | **Paradero 07** | Facultad de Derecho / Economía | Zona de facultades de ciencias sociales |
+| 07 | **Paradero 07** | Ciencias contables | Zona de facultades de ciencias sociales |
 | 08 | **Paradero 08** | Clínica Universitaria | Acceso a la clínica y bienestar universitario |
 | 09 | **Paradero 09** | Puerta 7 | Acceso secundario |
-| 10 | **Paradero 10** | Puerta Sistemas | Acceso a la Facultad de Ciencias Matemáticas |
+| 10 | **Paradero 10** | Ing. Sistemas | Acceso a la Facultad de Ciencias Matemáticas |
 
 ### 7.3 Recorrido
 
