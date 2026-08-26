@@ -87,7 +87,7 @@ universitario. Requiere presencia física en el campus.
 
 | Tarea | Referencia | Motivo |
 |-------|-----------|--------|
-| T1.2: Eliminar Debug Panel | `Map.tsx` | **Ejecutada** — flag `SHOW_DEBUG_PANEL=false` (rastro reactivable). W1 `__DEV__` conservado |
+| T1.2: Eliminar Debug Panel | `Map.tsx:255-262` | Congelada por orden del desarrollador hasta pre-producción |
 | T2.3: Asegurar Credenciales de Firma | `gradle.properties` en ambas apps | Diferida hasta empaquetar v1.2.0 |
 
 ## 7. Visión de Largo Plazo
