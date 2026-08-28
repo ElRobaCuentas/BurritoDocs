@@ -7,7 +7,7 @@
       }
     },
     "comentarios": { ".read": false, ".write": "auth != null" },
-    "administradores": { ".read": "auth != null", ".write": false },
+    "administradores": { ".read": "auth != null", ".write": "auth != null && root.child('administradores').child(auth.uid).exists()" },
     "asignaciones": {
       ".read": "auth != null",
       ".write": "auth != null && root.child('administradores').child(auth.uid).exists()",
