@@ -462,7 +462,7 @@ por bus en T4.4.
   `Map.tsx`, `MapBranding.tsx` (derivación de primer bus activo).
 
 **Referencias:** ARCHITECTURE.md (sección 4 y 5), FIREBASE_SCHEMA.md
-(secciones 3 y 7), TAREAS.txt (T3.1, T4.4).
+(secciones 3 y 7), MVP.md (T3.1, T4.4).
 
 ---
 
@@ -526,7 +526,7 @@ usuario sobre su nodo permitía auto-asignarse `rol: 'admin'`.
   archivos en UserApp.
 
 **Referencias:** ARCHITECTURE.md (sección 3), FIREBASE_SCHEMA.md
-(secciones 4, 9), TAREAS.txt (TA.1, TA.2, TA.3, TA.4).
+(secciones 4, 9), MVP.md (TA.1, TA.2, TA.3, TA.4).
 
 ---
 
@@ -798,7 +798,7 @@ actualización publicada por el Driver", no "momento del fix GPS".
   que el heartbeat publica realmente con el GPS quieto.
 
 **Referencias:** ARCHITECTURE.md (sección 5 y 8), FIREBASE_SCHEMA.md
-(sección 3), TAREAS_HISTORICO.md (P2 — T4.1), ROADMAP.md (Bloque A).
+(sección 3), HISTORIAL.md (T4.1 — heartbeat), ROADMAP.md (Bloque A).
 
 ---
 
@@ -1008,8 +1008,8 @@ mantiene intacta (requisito funcional de UserApp).
   backfilleado (44332211).
 
 **Referencias:** FIREBASE_SCHEMA.md (§2 claves primarias, §4 nodo
-`/choferes_uids`, §9 modelo de autorización), ReviewNotes.md (limpieza
-post-MVP), MVP.md (§3 Seguridad, Bloque 2 S3), MVP_CHANGELOG.md.
+`/choferes_uids`, §9 modelo de autorización), MVP.md (§3 Seguridad,
+Bloque 2 S3), HISTORIAL.md.
 
 ---
 
@@ -1091,7 +1091,7 @@ conductor presione DETENER TODO. Razones:
   administrativas al MVP; el siguiente hito es E2E de campo.
 
 **Referencias:** FIREBASE_SCHEMA.md (§4 nodo `/asignaciones`),
-ReviewNotes.md (semántica de desactivación), MVP_CHANGELOG.md.
+HISTORIAL.md (S5 — semántica de desactivación), MVP.md (§4 W12).
 
 ---
 
@@ -1105,7 +1105,6 @@ ReviewNotes.md (semántica de desactivación), MVP_CHANGELOG.md.
 | `TROUBLESHOOTING.md` | Problemas derivados de estas decisiones. |
 | `ROADMAP.md` | Fases donde se ejecutarán las ADR planificadas. |
 | `BUGS_RESUELTOS/` | Bugs resueltos que originaron decisiones arquitectónicas. |
-| `ReviewNotes.md` | Notas de revisión futura sobre decisiones arquitectónicas. |
 | BurritoUserApp/README.md | Setup y funcionalidad de UserApp. |
 | BurritoDriverApp/README.md | Setup y funcionalidad de DriverApp. |
 | BurritoUserApp/AGENTS.md | Reglas de trabajo para IA en UserApp. |

@@ -7,7 +7,7 @@ con la infraestructura base completa (T1.1, T2.1, T2.2, T3.1) y el
 tracking multi-bus operativo. La migración del panel de gestión a la
 DriverApp (FASE 1-5) fue completada, cerrando el deadlock arquitectónico
 entre el spinner de Mapbox y el panel admin. El backlog oficial detallado
-vive en `TAREAS.txt`.
+vive en `MVP.md`.
 
 A partir de aquí, el roadmap se organiza en dos bloques con
 dependencias funcionales.

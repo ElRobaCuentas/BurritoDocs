@@ -58,8 +58,8 @@ transformación.
 | `/administradores/{auth.uid}` | Auth UID de Firebase | `def456...` |
 
 > Nota: el nodo legacy `/ubicacion_burrito` fue eliminado de las reglas de
-> seguridad el 23/08/2026; su dato residual en RTDB está pendiente de
-> borrado manual desde Consola (ver `ReviewNotes.md`).
+> seguridad el 23/08/2026 y su dato residual en RTDB fue borrado manualmente
+> desde Consola.
 
 ## 3. Nodos de Tracking
 
@@ -558,5 +558,4 @@ autenticado.
 | BurritoDriverApp/README.md | Setup de Firebase, permisos Android y google-services.json. |
 | BurritoUserApp/README.md | Setup de Firebase, .env y google-services.json. |
 | `ROADMAP.md` | Fases y prioridades para la evolución del esquema. |
-| `ReviewNotes.md` | Notas de revisión futura para cambios en el esquema. |
 | `BUGS_RESUELTOS/` | Historial de bugs relacionados con Firebase RTDB. |

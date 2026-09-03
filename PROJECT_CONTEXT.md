@@ -23,7 +23,7 @@ operaciones (admin + conductor).
 
 Las siguientes iteraciones se enfocan en funcionalidades de flota
 (heartbeat, timeout, turnos, render multi-marcador, monitor, estadísticas,
-geofencing y smoothing) descritas en TAREAS.txt y ROADMAP.md.
+geofencing y smoothing) descritas en MVP.md y ROADMAP.md.
 
 ### BurritoDriverApp
 
@@ -99,7 +99,7 @@ Firebase Realtime Database actúa como el bus de datos. La UserApp nunca escribe
 - **Bug de inicialización asíncrona**: corregido. `initializeApp()` del
   SDK ahora se invoca con `await`.
 
-### Funcionalidades pendientes (ver TAREAS.txt y ROADMAP.md)
+### Funcionalidades pendientes (ver MVP.md y ROADMAP.md)
 
 - Heartbeat (mantener timestamp fresco en buses detenidos — T4.1).
 - Timeout check (ocultar buses fantasma tras inactividad — T5.3).
@@ -137,4 +137,3 @@ Firebase Realtime Database actúa como el bus de datos. La UserApp nunca escribe
 | BurritoDriverApp/README.md | Setup y funcionalidad de la app del conductor. |
 | BurritoUserApp/README.md | Setup y funcionalidad de la app del estudiante. |
 | `BUGS_RESUELTOS/` | Historial de bugs resueltos por aplicación. |
-| `ReviewNotes.md` | Notas de revisión futura para toda la documentación. |
