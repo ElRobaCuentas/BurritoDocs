@@ -19,8 +19,9 @@ websockets nativos del SDK.
 
 | Aplicación | Rol | Función principal | Autenticación |
 |-----------|-----|-------------------|---------------|
-| BurritoDriverApp | **Operador** (admin + conductor) | Capturar GPS, panel de gestión, enrutar según rol | DNI + contraseña (conductores), Auth UID (admin) |
+| BurritoDriverApp | **Conductor** | Capturar GPS y escribir en RTDB (conductor-only) | DNI + contraseña |
 | BurritoUserApp | **Consumidor** (estudiante) | Leer desde RTDB y renderizar mapa | Email/contraseña o Google Sign-In |
+| AdminWeb | **Administración** | Gestionar conductores, buses y asignaciones | Auth UID (admin) |
 | Firebase RTDB | **Bus de datos** | Almacenar y sincronizar estado en vivo | — |
 | Firebase Auth | **Identidad** | Autenticar conductores y estudiantes | — |
 

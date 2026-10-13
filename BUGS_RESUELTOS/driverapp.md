@@ -182,7 +182,7 @@ try { secondaryApp = firebase.app('SecondaryApp'); }
 catch (e) { secondaryApp = await firebase.initializeApp(config, 'SecondaryApp'); }
 
 Archivo:
-BurritoDriverApp/src/features/admin/services/admin_service.ts
+AdminWeb/src/features/admin/services/admin_service.ts
 
 Estado:
 Resuelto.
