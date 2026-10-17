@@ -13,7 +13,7 @@ responden a la pregunta: **¿por qué está hecho así?**
 
 Cada ADR sigue esta estructura:
 
-- **Estado**: Aceptada, Planeada o Reemplazada.
+- **Estado**: Aceptada, Planeada, Sustituida o Experimental.
 - **Contexto**: situación que originó la decisión.
 - **Decisión**: qué se decidió y cómo se implementó.
 - **Alternativas consideradas**: opciones que fueron evaluadas y
@@ -249,7 +249,7 @@ manifest, permisos y opciones de JS.
 
 ### ADR-009: Autenticación segmentada por roles
 
-**Estado:** Aceptada. Parcialmente reemplazada por ADR-017.
+**Estado:** Sustituida por ADR-017 y ADR-025.
 
 **Contexto:**
 
@@ -292,15 +292,21 @@ necesita un flujo de autenticación y un alcance de datos distinto.
   reemplazado por el modelo de membresía en `/administradores/{auth.uid}`
   (ver ADR-017). El campo `rol` en `/usuarios` ahora solo almacena
   `'estudiante'` y ya no participa en autorización.
+- **Actualización (transición, ver ADR-025)**: la separación de aplicaciones
+  por rol y los dominios vigentes quedaron definidos en ADR-025. El panel
+  administrativo vive en **AdminWeb** (login `{dni}@admin.com`) y la
+  DriverApp es exclusiva de conductores (login `{dni}@conductor.com`). El
+  dominio `${dni}@burritodriver.com` citado en la Decisión de este ADR
+  corresponde al modelo anterior y ya no está en uso.
 
 **Referencias:** ARCHITECTURE.md (sección 3 y 4), FIREBASE_SCHEMA.md
-(sección 5 y 9).
+(sección 5 y 9), ADR-025.
 
 ---
 
 ### ADR-010: Gestión manual del ciclo de vida del tracking
 
-**Estado:** Aceptada.
+**Estado:** Sustituida por ADR-026.
 
 **Contexto:**
 
@@ -332,13 +338,19 @@ empezar y "DETENER TODO" para finalizar. Al detener, se escribe
   no hay desplazamiento entre publicaciones (burritoLocationStore).
 - Timeout check automático está planificado en Fase 4 del roadmap.
 
-**Referencias:** ARCHITECTURE.md (sección 8), ROADMAP.md (Fase 4).
+**Nota de transición (ADR-026):** este ADR describía una acción compuesta
+("DETENER TODO" = `isActive:false` + `signOut`). La decisión vigente separa
+ambas operaciones: "DETENER RECORRIDO" detiene la transmisión y escribe
+`isActive:false`; "Cerrar sesión" es una acción independiente. El término
+"DETENER TODO" queda retirado como concepto vigente. Ver ADR-026.
+
+**Referencias:** ARCHITECTURE.md (sección 8), ROADMAP.md (Fase 4), ADR-026.
 
 ---
 
 ### ADR-011: Instancia secundaria de Firebase Auth para CRUD admin
 
-**Estado:** Aceptada.
+**Estado:** Sustituida por ADR-025.
 
 **Contexto:**
 
@@ -372,8 +384,15 @@ permanece intacta.
   lugar del objeto FirebaseApp. Se corrigió con `await` en
   `admin_service.ts:79`.
 
+**Nota de transición (ADR-025):** el panel administrativo ya no vive en la
+DriverApp. En **AdminWeb** el aislamiento respecto de la sesión del admin se
+implementa con una **app temporal por operación** (`initializeApp(config,
+'reg_...' / 'del_...' / 'admin_...')` + `initializeAuth(..., inMemoryPersistence)`),
+no con `SecondaryApp`. El dominio `${dni}@burritodriver.com` citado en el
+Contexto corresponde al modelo anterior.
+
 **Referencias:** ARCHITECTURE.md (sección 4, módulo admin),
-FIREBASE_SCHEMA.md (sección 4).
+FIREBASE_SCHEMA.md (sección 4), ADR-025.
 
 ---
 
@@ -409,7 +428,7 @@ pero no está soportada ni probada.
   `react-native-background-fetch` u otra estrategia de background
   modes.
 
-**Referencias:** ARCHITECTURE.md (sección 9), BurritoDriverApp/README.md.
+**Referencias:** ARCHITECTURE.md (sección 9), Driver/README.md.
 
 ---
 
@@ -468,7 +487,7 @@ por bus en T4.4.
 
 ### ADR-017: Migración del panel admin a DriverApp + autorización por auth.uid
 
-**Estado:** Aceptada.
+**Estado:** Sustituida por ADR-025.
 
 **Contexto:**
 
@@ -525,8 +544,14 @@ usuario sobre su nodo permitía auto-asignarse `rol: 'admin'`.
   en DriverApp, se eliminaron 5 archivos en UserApp, se modificaron 3
   archivos en UserApp.
 
+**Nota de transición (ADR-025):** la migración del panel a la DriverApp
+descrita aquí fue reemplazada por la migración a **AdminWeb**. La
+autorización por `/administradores/{auth.uid}` (puntos 2 y 4) sigue vigente
+y se conserva; lo que cambió es la aplicación que aloja el panel
+administrativo.
+
 **Referencias:** ARCHITECTURE.md (sección 3), FIREBASE_SCHEMA.md
-(secciones 4, 9), MVP.md (TA.1, TA.2, TA.3, TA.4).
+(secciones 4, 9), MVP.md (TA.1, TA.2, TA.3, TA.4), ADR-025.
 
 ---
 
@@ -735,6 +760,8 @@ Firebase RTDB (o del backend propio, cuando exista) para proporcionar:
 **Referencias:** ROADMAP.md (Visión de Largo Plazo).
 
 ---
+
+## ADR Aceptadas (continuación)
 
 ### ADR-019: Heartbeat de presencia en la DriverApp (T4.1)
 
@@ -1056,7 +1083,8 @@ Se documenta formalmente que desactivar conductor o bus
 **elegibilidad futura**: el elemento deja de aparecer en los selectores
 de nueva asignación, pero NO revoca la autorización de escritura GPS ni
 interrumpe un recorrido ya iniciado. El tracking continúa hasta que el
-conductor presione DETENER TODO. Razones:
+conductor presione DETENER RECORRIDO (ADR-026; anteriormente "DETENER TODO").
+Razones:
 
 - Desactivar es decisión administrativa; cancelar asignación es acción
   operativa. Son conceptos distintos y usan herramientas distintas.
@@ -1095,6 +1123,122 @@ HISTORIAL.md (S5 — semántica de desactivación), MVP.md (§4 W12).
 
 ---
 
+### ADR-025: Migración de la administración a AdminWeb y separación de dominios de correo por rol
+
+**Estado:** Aceptada.
+
+**Contexto:**
+
+El panel administrativo vivió primero en la UserApp y luego fue movido a la
+DriverApp (ver ADR-009 y ADR-017). Mantener el panel y el tracking en la
+misma aplicación obligaba a un enrutador que decidía entre modo *admin* y
+modo *conductor* tras el login, y compartía un único proyecto móvil Android
+para dos roles con requisitos distintos. Además, todos los roles usaban el
+mismo dominio de correo (`@burritodriver.com`), lo que impedía distinguir el
+rol por identidad.
+
+**Decisión:**
+
+1. El panel administrativo vive en una aplicación web independiente,
+   **AdminWeb** (React 19 + Vite + Firebase JS SDK). La DriverApp queda como
+   aplicación móvil Android exclusiva de conductores; la UserApp, de
+   estudiantes.
+2. Separación de dominios de correo por rol, hardcodeada en los servicios:
+   - **Administradores**: `{dni}@admin.com` (login en AdminWeb).
+   - **Conductores**: `{dni}@conductor.com` (login en la DriverApp; creado
+     desde AdminWeb).
+3. La autorización administrativa sigue basada en la existencia de
+   `/administradores/{auth.uid}` (ADR-017), evaluada por AdminWeb tras el
+   login (`existeAdministrador`, con timeout de 10 s).
+4. El aislamiento entre las cuentas Auth creadas por el panel y la sesión del
+   admin se logra con una **app temporal por operación** con
+   `inMemoryPersistence` (ver ADR-011), no con `SecondaryApp`.
+5. La contraseña del conductor es su DNI; la del administrador la define
+   quien crea la cuenta.
+
+**Alternativas consideradas:**
+
+- Mantener el panel dentro de la DriverApp (ADR-017): descartado por mezclar
+  dos roles y dos plataformas en un mismo artefacto.
+- Un único dominio de correo para todos los roles: descartado; impide
+  distinguir el rol por identidad.
+- Autorizar por dominio de correo (`@admin.com`): descartado como mecanismo
+  de seguridad (el registro público no verifica el email, ver ADR-023); el
+  dominio es una convención de identidad, no un control de acceso.
+
+**Consecuencias:**
+
+- Tres aplicaciones con responsabilidad única: Driver (conductor), User
+  (estudiante) y AdminWeb (administrador).
+- El correo queda vinculado al rol por convención; el control de acceso real
+  depende de Firebase Auth (UID) y de `/administradores`.
+- El campo `rol` de `/usuarios` queda inerte (siempre `'estudiante'`), como
+  ya anticipaba ADR-017.
+
+**Limitaciones conocidas (observadas en el código, no son tareas):**
+
+- `deleteAdmin` borra únicamente el nodo RTDB `/administradores/{uid}`; la
+  cuenta de Auth debe borrarse manualmente en Firebase Console.
+- `toggleChoferStatus` alterna `activo` en `/choferes/{dni}` pero **no**
+  limpia el índice `/choferes_uids/{uid}`.
+
+**Referencias:** ARCHITECTURE.md, FIREBASE_SCHEMA.md (secciones 4 y 9),
+AdminWeb/README.md, HISTORIAL.md (I4 — separación de dominios), ADR-009,
+ADR-017, ADR-023.
+
+---
+
+### ADR-026: Separación de "Detener recorrido" y "Cerrar sesión"
+
+**Estado:** Aceptada.
+
+**Contexto:**
+
+El diseño original (ADR-010) trataba el fin de turno como una operación
+compuesta: la acción "DETENER TODO" escribía `isActive:false` y a
+continuación cerraba la sesión de Firebase Auth. Acoplar el control del
+tracking con el ciclo de sesión forzaba a cerrar sesión para finalizar el
+recorrido y mezclaba dos responsabilidades distintas.
+
+**Decisión:**
+
+1. **DETENER RECORRIDO** es la única acción que detiene la transmisión de
+   ubicación: cancela el `watchPosition`, detiene el heartbeat y el
+   Foreground Service, y escribe `isActive:false` en
+   `/ubicacion_buses/{busId}`.
+2. **Cerrar sesión** es una acción **independiente** (`auth().signOut()`),
+   con confirmación mediante Alert. No detiene el tracking por sí misma.
+3. El término **"DETENER TODO"** y la acción compuesta quedan retirados como
+   concepto vigente.
+
+**Alternativas consideradas:**
+
+- Mantener la acción compuesta "DETENER TODO" (ADR-010): descartado; mezcla
+  dos responsabilidades y obliga a cerrar sesión para terminar el recorrido.
+- Hacer que "Cerrar sesión" detenga el tracking de forma implícita:
+  descartado; el cierre de sesión no debe alterar el servicio de forma
+  silenciosa.
+
+**Consecuencias:**
+
+- El conductor finaliza el recorrido con "DETENER RECORRIDO"; cerrar sesión
+  no cambia el estado del bus por sí mismo.
+- La etiqueta de la acción de detención ya no implica un logout.
+
+**Limitación conocida (verificada en código, no es tarea):**
+
+Ninguna terminación anómala escribe `isActive:false`: el reinicio fallido del
+watchdog, la muerte silenciosa del servicio y el desmontaje de la pantalla no
+lo hacen (tampoco existe `onDisconnect`). Un bus puede quedar marcado como
+activo en RTDB hasta la acción manual del conductor o la mitigación por
+expiración de timestamp en la UserApp. **El sistema no garantiza que
+`isActive` refleje el estado real del bus.**
+
+**Referencias:** ARCHITECTURE.md (sección 8), FIREBASE_SCHEMA.md (sección 4),
+SendCoordinates.tsx, ROADMAP.md (UX-01), HISTORIAL.md (D4), ADR-010.
+
+---
+
 ## Referencias
 
 | Documento | Relación |
@@ -1105,7 +1249,7 @@ HISTORIAL.md (S5 — semántica de desactivación), MVP.md (§4 W12).
 | `TROUBLESHOOTING.md` | Problemas derivados de estas decisiones. |
 | `ROADMAP.md` | Fases donde se ejecutarán las ADR planificadas. |
 | `BUGS_RESUELTOS/` | Bugs resueltos que originaron decisiones arquitectónicas. |
-| BurritoUserApp/README.md | Setup y funcionalidad de UserApp. |
-| BurritoDriverApp/README.md | Setup y funcionalidad de DriverApp. |
-| BurritoUserApp/AGENTS.md | Reglas de trabajo para IA en UserApp. |
-| BurritoDriverApp/AGENTS.md | Reglas de trabajo para IA en DriverApp. |
+| `User/README.md` | Setup y funcionalidad de UserApp. |
+| `Driver/README.md` | Setup y funcionalidad de DriverApp. |
+| `User/AGENTS.md` | Reglas de trabajo para IA en UserApp. |
+| `Driver/AGENTS.md` | Reglas de trabajo para IA en DriverApp. |

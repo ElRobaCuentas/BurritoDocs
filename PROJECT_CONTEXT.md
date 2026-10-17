@@ -13,13 +13,14 @@ Estado del proyecto
 El proyecto se encuentra en la fase de desarrollo Casa/Calle (Bloque A).
 La infraestructura principal (Firebase, autenticación, tracking GPS,
 Background Service, reglas de seguridad RBAC, testing unitario,
-listener multi-bus, **migración del panel admin a DriverApp** y
-**autorización por auth.uid**) ya está implementada y operativa.
+listener multi-bus, **panel de gestión en AdminWeb** y **autorización por
+auth.uid**) ya está implementada y operativa.
 
 La migración del panel de gestión resolvió el deadlock arquitectónico
-entre el spinner de Mapbox de la UserApp y el panel admin (ver ADR-017).
-La UserApp ahora es 100% estudiante. La DriverApp opera como app de
-operaciones (admin + conductor).
+entre el spinner de Mapbox de la UserApp y el panel admin (ADR-017). La
+UserApp quedó 100% estudiante; el panel admin se separó de la app móvil
+en **AdminWeb** (SPA web), y la DriverApp quedó exclusiva de conductores
+(ADR-025).
 
 Las siguientes iteraciones se enfocan en funcionalidades de flota
 (heartbeat, timeout, turnos, render multi-marcador, monitor, estadísticas,
@@ -28,14 +29,11 @@ geofencing y smoothing) descritas en MVP.md y ROADMAP.md.
 ### BurritoDriverApp
 
 - Dispositivo: teléfono Android instalado en cada bus universitario.
-- Función principal: capturar coordenadas GPS y transmitirlas a Firebase
-  en tiempo real mediante un Foreground Service.
-- Función secundaria (admin): panel de gestión de choferes, buses y
-  asignaciones, accesible para usuarios cuyo UID existe en
-  `/administradores/`.
-- Usuarios: conductores de la Oficina de Transportes y administradores.
-- Autenticación: login con DNI + contraseña sobre Firebase Auth.
-  Enrutamiento post-login por membresía en `/administradores/{auth.uid}`.
+- Función: capturar coordenadas GPS y transmitirlas a Firebase en tiempo
+  real mediante un Foreground Service.
+- Usuarios: conductores de la Oficina de Transportes.
+- Autenticación: login con DNI + contraseña sobre Firebase Auth, con email
+  compuesto `${dni}@conductor.com`. La app es exclusiva de conductores.
 
 ### BurritoUserApp
 
@@ -45,17 +43,27 @@ geofencing y smoothing) descritas en MVP.md y ROADMAP.md.
 - Usuarios: estudiantes de la UNMSM.
 - Autenticación: email/contraseña o Google Sign-In.
 
+### AdminWeb
+
+- Dispositivo: navegador (SPA web).
+- Función: panel de gestión — CRUD de choferes, buses, asignaciones y
+  administradores.
+- Usuarios: administradores de la Oficina de Transportes.
+- Autenticación: login con DNI + contraseña sobre Firebase Auth, con email
+  compuesto `${dni}@admin.com`; acceso autorizado por membresía en
+  `/administradores/{auth.uid}`.
+
 ### Relación entre aplicaciones
 
 ```
 DriverApp ──escribe──→ Firebase RTDB ──escucha──→ UserApp
-                             ↑
-                        (admin escribe
-                         choferes, buses,
-                         asignaciones)
+AdminWeb  ──escribe──→ Firebase RTDB
 ```
 
-Firebase Realtime Database actúa como el bus de datos. La UserApp nunca escribe coordenadas; solo lee. No existe backend propio ni API intermedia. La DriverApp es la única que escribe en nodos de administración y tracking.
+Firebase Realtime Database actúa como el bus de datos. La UserApp nunca
+escribe coordenadas; solo lee. No existe backend propio ni API intermedia.
+La DriverApp escribe el tracking (`/ubicacion_buses`) y AdminWeb los nodos
+de administración (choferes, buses, asignaciones).
 
 ## 3. Stack Tecnológico
 
@@ -85,15 +93,15 @@ Firebase Realtime Database actúa como el bus de datos. La UserApp nunca escribe
   independiente por cada bus. La UI actualmente muestra un solo marcador
   (seleccionando el bus activo más reciente); el render multi-marcador
   completo está planificado en T4.4.
-- **Interfaz administrativa**: migrada a DriverApp. CRUD completo de
+- **Interfaz administrativa**: en AdminWeb (SPA web). CRUD completo de
   conductores, buses y asignaciones. Acceso por membresía en
   `/administradores/{auth.uid}`.
 - Dark mode en la app de estudiantes.
 - Compatibilidad con Android 14 (API 34), incluyendo soporte para Foreground Services de tipo location.
 - Feedback de estudiantes mediante formulario de comentarios.
-- **Migración del panel admin**: completada (FASE 1-5). La UserApp fue
-  podada de todo código administrativo. La DriverApp tiene enrutador
-  tripartito (admin / conductor / no sesión).
+- **Migración del panel admin**: completada. La UserApp fue podada de todo
+  código administrativo y la DriverApp quedó exclusiva de conductores; el
+  panel reside en AdminWeb (ADR-025).
 - **Modelo de autorización**: reemplazado de `/usuarios/{uid}/rol` a
   `/administradores/{auth.uid}` (inmutable desde el cliente).
 - **Bug de inicialización asíncrona**: corregido. `initializeApp()` del
@@ -134,6 +142,7 @@ Firebase Realtime Database actúa como el bus de datos. La UserApp nunca escribe
 | `ROADMAP.md` | Tareas pendientes, fases y prioridades. |
 | `TROUBLESHOOTING.md` | Historial de bugs, síntomas y soluciones. |
 | `DECISIONS.md` | Registro de decisiones de arquitectura (ADR). |
-| BurritoDriverApp/README.md | Setup y funcionalidad de la app del conductor. |
-| BurritoUserApp/README.md | Setup y funcionalidad de la app del estudiante. |
+| Driver/README.md | Setup y funcionalidad de la app del conductor. |
+| User/README.md | Setup y funcionalidad de la app del estudiante. |
+| AdminWeb/README.md | Setup y funcionalidad del panel de administración. |
 | `BUGS_RESUELTOS/` | Historial de bugs resueltos por aplicación. |

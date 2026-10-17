@@ -98,10 +98,10 @@ Cada caso documenta: **síntoma**, **causa**, **diagnóstico**,
 
 | Campo | Descripción |
 |-------|-------------|
-| Síntoma | Con sesión guardada y sin red (modo avión), la DriverApp queda en spinner infinito. No hay CERRAR SESIÓN. `SendCoordinates` nunca se monta |
-| Causa | `existeAdministrador()` (`admin_check.ts:5`) usa `once('value')` de rnfirebase, que **offline cuelga indefinidamente — ni resuelve ni rechaza**. `isCheckingRole` queda `true` para siempre en `DriverApp.tsx` |
+| Síntoma | Con sesión guardada y sin red (modo avión), el auth gate de **AdminWeb** queda en spinner infinito. No hay CERRAR SESIÓN; el panel nunca se monta. (Originalmente diagnosticado en la DriverApp, antes de ADR-025) |
+| Causa | `existeAdministrador()` (`admin_check.ts`) usa `once('value')` de rnfirebase, que **offline cuelga indefinidamente — ni resuelve ni rechaza**; el estado de verificación queda `true` para siempre |
 | Diagnóstico | Captura CDP del JS: log START de `existeAdministrador` aparece y el DONE jamás. `adb logcat` no muestra error (no es un throw, es una promesa que nunca termina) |
-| Solución | Acotar la llamada con timeout (`get()` con `withTimeout` o equivalente) y ofrecer REINTENTAR + CERRAR SESIÓN ante fallo. **Resuelto por C4.AUTH** (`admin_check.ts` envuelve el `once('value')` en `withTimeout(..., 10000)`; ver `docs/BUGS_RESUELTOS/driverapp.md` CASO 014) |
+| Solución | Acotar la llamada con timeout (`get()` con `withTimeout`, 10 s) y ofrecer REINTENTAR + CERRAR SESIÓN ante fallo. **Resuelto por C4.AUTH** (ver `docs/BUGS_RESUELTOS/driverapp.md` CASO 014); hoy vigente en el auth gate de **AdminWeb** (`App.tsx` + `admin_check.ts`) |
 | Prevención | Todo read `once()` de rnfirebase sin persistence (ADR-003) cuelga offline. No dejarlo sin límite de tiempo |
 
 ### Login de conductor falla con "user-not-found"
@@ -109,20 +109,20 @@ Cada caso documenta: **síntoma**, **causa**, **diagnóstico**,
 | Campo | Descripción |
 |-------|-------------|
 | Síntoma | El conductor no puede iniciar sesión, Firebase Auth devuelve `auth/user-not-found` |
-| Causa | La cuenta `${dni}@burritodriver.com` no existe en Firebase Auth. El administrador no creó el chofer desde el panel, o se ingresó un DNI incorrecto |
+| Causa | La cuenta `${dni}@conductor.com` no existe en Firebase Auth. El administrador no creó el chofer desde el panel, o se ingresó un DNI incorrecto |
 | Diagnóstico | Verificar en Firebase Console → Authentication que el email existe |
-| Solución | Crear el chofer desde el Panel de Gestión en BurritoDriverApp (ChoferesScreen). El servicio `admin_service.ts` crea Auth + RTDB simultáneamente |
-| Prevención | El flujo admin siempre crea Auth con email `${dni}@burritodriver.com` y contraseña = DNI |
+| Solución | Crear el chofer desde el Panel de Gestión en **AdminWeb** (ChoferesScreen). El servicio `admin_service.ts` crea Auth + RTDB simultáneamente |
+| Prevención | El flujo admin siempre crea Auth con email `${dni}@conductor.com` y contraseña = DNI |
 
 ### Error al crear chofer desde el panel admin
 
 | Campo | Descripción |
 |-------|-------------|
 | Síntoma | Al crear un chofer aparece "Error de autenticación" |
-| Causa | La instancia secundaria de Firebase Auth (`SecondaryApp`) no se inicializa correctamente |
+| Causa | La app temporal de Firebase Auth (`initializeApp(config, 'reg_...')` con `inMemoryPersistence`) no se inicializa correctamente |
 | Diagnóstico | Revisar logs de Firebase en consola para errores de inicialización |
-| Solución | El código ya maneja la inicialización lazy con try/catch. Si persiste, verificar que `google-services.json` esté presente |
-| Prevención | `admin_service.ts` usa inicialización lazy: `firebase.initializeApp(config, 'SecondaryApp')` |
+| Solución | El código ya maneja la inicialización con try/catch. Si persiste, verificar que `google-services.json` (o la config web) esté presente |
+| Prevención | `admin_service.ts` usa una app temporal por operación con `inMemoryPersistence` (ADR-011 / ADR-025), no una instancia `SecondaryApp` persistente |
 
 ### Google Sign-In no funciona en UserApp
 
@@ -286,6 +286,6 @@ actual del proyecto, planificadas en fases futuras del roadmap.
 | `FIREBASE_SCHEMA.md` | Estructura de nodos, payloads e índices de la RTDB. |
 | `ROADMAP.md` | Fases y prioridades para resolver problemas conocidos. |
 | `DECISIONS.md` | Decisiones de arquitectura (persistence, serverless, etc.). |
-| BurritoDriverApp/README.md | Setup y requisitos de DriverApp. |
-| BurritoUserApp/README.md | Setup y requisitos de UserApp. |
+| Driver/README.md | Setup y requisitos de DriverApp. |
+| User/README.md | Setup y requisitos de UserApp. |
 | `BUGS_RESUELTOS/` | Historial técnico de bugs resueltos durante el desarrollo. |

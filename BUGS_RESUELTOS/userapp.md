@@ -72,6 +72,13 @@ El "ajuste a la ruta" es peligroso si los datos de entrada tienen ruido. Primero
 
 ## CASO 013 — Crash inmediato al iniciar recorrido en Android 14  
 
+> Nota (revisión 2026-10-16): este caso pertenece a la **DriverApp**
+> (`SendCoordinates.tsx`, Foreground Service), no a la UserApp; quedó
+> registrado aquí por error. El archivo afectado es
+> `Driver/src/screen/SendCoordinates.tsx`. El número CASO 013 también está
+> usado en `driverapp.md` (CASO 013 — C4.7), que corresponde a la
+> numeración de la DriverApp.
+
 Síntoma
 Al presionar ‘INICIAR RECORRIDO’, la aplicación se cerraba inmediatamente. Luego de 1-2 segundos me aparecia un popup de que la app no responde (me daba opción para cerrar la app).
   

@@ -355,9 +355,9 @@ app; 10s + esperar y reintentar empeoraría la UX).
 
 Archivos:
 - `Driver/src/shared/utils/timeout.ts` (nuevo: `withTimeout`, `pause`)
-- `Driver/src/features/admin/services/admin_check.ts`
+- `Driver/src/features/admin/services/admin_check.ts` (hoy en `AdminWeb/src/features/admin/services/admin_check.ts`, tras ADR-025)
 - `Driver/src/screen/SendCoordinates.tsx` (reemplaza los helpers locales por el import compartido)
-- `Driver/src/DriverApp.tsx` (sin cambios netos: la UI de roleError ya cubría el caso)
+- `Driver/src/DriverApp.tsx` (sin cambios netos: la UI de roleError ya cubría el caso; hoy el gate de rol vive en AdminWeb)
 
 Estado:
 Resuelto — validado en hardware real (Motorola G24 Power):

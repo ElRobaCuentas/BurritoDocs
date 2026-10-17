@@ -4,10 +4,10 @@
 
 El proyecto se encuentra en el **Bloque A (Casa/Calle)** de desarrollo,
 con la infraestructura base completa (T1.1, T2.1, T2.2, T3.1) y el
-tracking multi-bus operativo. La migración del panel de gestión a la
-DriverApp (FASE 1-5) fue completada, cerrando el deadlock arquitectónico
-entre el spinner de Mapbox y el panel admin. El backlog oficial detallado
-vive en `MVP.md`.
+tracking multi-bus operativo. La migración del panel de gestión fue
+completada y el panel quedó en **AdminWeb** (ADR-025), cerrando el
+deadlock arquitectónico entre el spinner de Mapbox y el panel admin. El
+backlog oficial detallado vive en `MVP.md`.
 
 A partir de aquí, el roadmap se organiza en dos bloques con
 dependencias funcionales.
@@ -21,7 +21,7 @@ dependencias funcionales.
 | T2.2 | Testing Unitario: Haversine (6 tests), getMovementStatus (6 tests), filtro dedup (7 tests), App.test.tsx corregido | BurritoUserApp + BurritoDriverApp |
 | T3.1 | Multi-bus listener: migración de `/ubicacion_burrito` a `/ubicacion_buses`, store `Record<string, BurritoLocation>` | BurritoUserApp |
 | T3.2 | Multi-bus integración — validación del pipeline completo con datos reales (Motorola, caminata + bus, Firebase Console + UserApp). | UserApp |
-| T5.4 | Migración del Panel de Gestión a DriverApp: módulo admin trasplantado, enrutador tripartito por auth.uid, poda de UserApp, reglas RTDB reescritas | BurritoDriverApp + BurritoUserApp |
+| T5.4 | Migración del Panel de Gestión fuera de la UserApp: módulo admin extraído a AdminWeb (ADR-025), poda de UserApp, reglas RTDB reescritas | AdminWeb + BurritoUserApp |
 | T5.5 | Seguridad — autorización por `/administradores/{auth.uid}` con `.write: false`, deprecación de `rol` como fuente admin | Consola Firebase |
 | ADR-018 | Bug async `initializeApp` en `admin_service.ts` — corregido con `await` + tipo `FirebaseApp` | BurritoDriverApp |
 | UX-01 | Ciclo 3 estados en SendCoordinates (separar stopProcess de signOut), FloatingBackButton, FloatingBackButton en CRUDs | BurritoDriverApp |
@@ -33,6 +33,9 @@ dependencias funcionales.
 Fase de pulido visual y corrección de fugas de estado en la interfaz de
 conductor y administración. No se modifica lógica de negocio, Firebase,
 GPS, BackgroundJob, servicios, modelos, ni flujo de tracking.
+
+> Nota: estas tareas se ejecutaron cuando el panel de administración
+> residía en la DriverApp; hoy el panel vive en AdminWeb (ADR-025).
 
 Cada tarea es un commit atómico: se implementa, se prueba en emulador,
 se commitea y se sube a GitHub antes de comenzar la siguiente.
@@ -68,7 +71,7 @@ No requiere estar en el campus universitario.
 | 8 | T5.2: Smoothing (implementación) — algoritmo de interpolación (moving average / Kalman ligero) | UserApp | T4.4 |
 
 **Nota sobre calculateDistance():** la función Haversine se extrajo a
-`BurritoUserApp/src/features/map/utils/geo.ts` y está cubierta por
+`User/src/features/map/utils/geo.ts` y está cubierta por
 6 tests unitarios (T2.2). Está disponible para su uso en geofencing
 (T4.3) y smoothing (T5.2).
 
@@ -95,7 +98,8 @@ universitario. Requiere presencia física en el campus.
 Iniciativas identificadas que no forman parte del roadmap activo pero
 que representan la dirección futura del proyecto.
 
-- Dashboard web para administración de flota.
+- Dashboard web de flota con métricas en vivo (AdminWeb ya existe; su
+  módulo de monitoreo de flota está planificado en T4.5).
 - Backend propio (Node.js o similar) para centralizar lógica.
 - API pública para integración con servicios externos.
 - Analytics avanzados (tiempos de espera, ocupación, rutas más usadas).
