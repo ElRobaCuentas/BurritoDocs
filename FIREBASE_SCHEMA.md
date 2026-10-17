@@ -8,7 +8,8 @@ SQL ni otra fuente de verdad.
 
 - **Proyecto Firebase**: `burritounmsm`
 - **URL de RTDB**: `https://burritounmsm-default-rtdb.firebaseio.com`
-- **SDK**: `@react-native-firebase/database` v23.8.x en ambas apps
+- **SDK**: `@react-native-firebase/database` v23.8.x en las apps móviles
+  (Driver y User); Firebase JS SDK v12.x en AdminWeb (web).
 
 La base de datos se organiza en nodos independientes, cada uno con un
 propósito específico dentro del sistema. No hay relaciones foráneas
@@ -58,8 +59,9 @@ transformación.
 | `/administradores/{auth.uid}` | Auth UID de Firebase | `def456...` |
 
 > Nota: el nodo legacy `/ubicacion_burrito` fue eliminado de las reglas de
-> seguridad el 23/08/2026 y su dato residual en RTDB fue borrado manualmente
-> desde Consola.
+> seguridad el 23/08/2026 (queda denegado por defecto). El borrado del dato
+> residual en RTDB está **pendiente en Consola** — no es verificable desde
+> el cliente.
 
 ## 3. Nodos de Tracking
 
@@ -126,9 +128,9 @@ administrativo, se escribe `{ isActive: false }` en
 
 - **Propósito**: catálogo de conductores. Cada clave es el DNI del
   conductor.
-- **Escritura**: `admin_service.createChofer()` (desde DriverApp).
+- **Escritura**: `admin_service.createChofer()` (desde AdminWeb).
 - **Lectura**: `admin_service.subscribeToChoferes()` (listener continuo
-  desde DriverApp, panel admin).
+  desde AdminWeb, panel admin).
 - **Estructura**:
 
 ```json
@@ -144,9 +146,10 @@ administrativo, se escribe `{ isActive: false }` en
 ```
 
 **Creación**: además de escribir en RTDB, `createChofer()` crea una
-cuenta de Firebase Auth con email `${dni}@burritodriver.com` y
-contraseña igual al DNI. Usa una instancia secundaria de Auth
-(`SecondaryApp`) para no cerrar la sesión del admin.
+cuenta de Firebase Auth con email `${dni}@conductor.com` y contraseña
+igual al DNI. Usa una **app temporal por operación** con
+`inMemoryPersistence` para no cerrar la sesión del admin (ver ADR-011 y
+ADR-025). El mismo mecanismo usa `createAdmin()` con `{dni}@admin.com`.
 
 ### `/choferes_uids/{uid}` (nuevo, 23/08/2026)
 
@@ -154,7 +157,7 @@ contraseña igual al DNI. Usa una instancia secundaria de Auth
   verificar que un usuario autenticado es un conductor registrado, sin
   exponer el catálogo `/choferes` (que tiene `.read` amplio). Es la base
   de la autorización de escritura sobre `/ubicacion_buses` (ADR-023).
-- **Escritura**: `admin_service.createChofer()` (DriverApp y AdminWeb)
+- **Escritura**: `admin_service.createChofer()` (AdminWeb)
   escribe `{uid: dni}` inmediatamente después de crear la cuenta Auth y
   el registro en `/choferes`. Postura **fail-closed**: es la última
   escritura de la transacción; si falla, el chofer existe pero no podrá
@@ -177,9 +180,9 @@ contraseña igual al DNI. Usa una instancia secundaria de Auth
 
 - **Propósito**: catálogo de buses. Cada clave es la placa del vehículo
   en mayúsculas.
-- **Escritura**: `admin_service.createBus()` (desde DriverApp).
+- **Escritura**: `admin_service.createBus()` (desde AdminWeb).
 - **Lectura**: `admin_service.subscribeToBuses()` (listener continuo
-  desde DriverApp, panel admin).
+  desde AdminWeb, panel admin).
 - **Estructura**:
 
 ```json
@@ -252,8 +255,8 @@ los renderizan condicionalmente.
   administrador. **No existe ni se lee un campo `rol`**.
 - **Escritura**: exclusivamente manual desde Firebase Console. Las reglas
   de RTDB tienen `.write: false` sobre este nodo.
-- **Lectura**: DriverApp — `admin_check.ts` (`existeAdministrador(uid)`)
-  para el enrutador post-login. RTDB Security Rules — para el predicado
+- **Lectura**: AdminWeb — `admin_check.ts` (`existeAdministrador(uid)`)
+  para el auth gate post-login. RTDB Security Rules — para el predicado
   admin en todos los nodos administrativos.
 - **Estructura**:
 
@@ -279,10 +282,10 @@ Opcionalmente puede almacenar `{ nombre, dni }` para trazabilidad:
 }
 ```
 
-**Propiedad del nodo**: la DriverApp (admin) escribe/lee los nodos de
-gestión (`/choferes`, `/buses`, `/asignaciones`). La UserApp ya no
-consulta ni escribe en estos nodos. El administrador accede al panel
-exclusivamente desde la DriverApp.
+**Propiedad del nodo**: AdminWeb (admin) escribe/lee los nodos de gestión
+(`/choferes`, `/buses`, `/asignaciones`). La UserApp ya no consulta ni
+escribe en estos nodos. La DriverApp solo lee `/asignaciones` para obtener
+su turno. El administrador accede al panel exclusivamente desde AdminWeb.
 
 ## 5. Nodos de Autenticación
 
@@ -362,19 +365,19 @@ desde el cliente (`.write: false`).
 ## 7. Estado del Esquema
 
 El esquema se encuentra consolidado tras la migración multi-bus (T3.1),
-la migración del panel admin a DriverApp (FASE 1-5) y el endurecimiento
-de las reglas de seguridad por UID (23/08/2026, ADR-023). El nodo
-heredado `/ubicacion_burrito` fue eliminado de las reglas; todo el
-tracking fluye a través de `/ubicacion_buses/{placa}`.
+la migración del panel admin a la aplicación web **AdminWeb** (ADR-025) y
+el endurecimiento de las reglas de seguridad por UID (23/08/2026,
+ADR-023). El nodo heredado `/ubicacion_burrito` fue eliminado de las
+reglas; todo el tracking fluye a través de `/ubicacion_buses/{placa}`.
 
 ### Nodos activos (flujo actual)
 
 | Nodo | Estado | Propietario | Evolución prevista |
 |------|--------|-------------|-------------------|
-| `/asignaciones` | Definitivo | DriverApp (admin) | Se mantiene. |
-| `/choferes` | Definitivo | DriverApp (admin) | Se mantiene. |
-| `/choferes_uids` | Definitivo | DriverApp/AdminWeb (createChofer) | Índice uid→DNI para reglas (ADR-023). Backfill manual para preexistentes. |
-| `/buses` | Definitivo | DriverApp (admin) | Se mantiene. |
+| `/asignaciones` | Definitivo | AdminWeb (admin) | Se mantiene. |
+| `/choferes` | Definitivo | AdminWeb (admin) | Se mantiene. |
+| `/choferes_uids` | Definitivo | AdminWeb (createChofer) | Índice uid→DNI para reglas (ADR-023). Backfill manual para preexistentes. |
+| `/buses` | Definitivo | AdminWeb (admin) | Se mantiene. |
 | `/administradores` | Definitivo | Firebase Console | Se mantiene. Solo escritura manual. |
 | `/usuarios` | Definitivo | UserApp | Se mantiene. |
 | `/comentarios` | Provisional | UserApp | Sin cambios previstos inmediatos. |
@@ -424,11 +427,32 @@ Regla Firebase requerida:
 ### Nota sobre la creación de índices
 
 Los índices deben configurarse en la pestaña **Rules** de Firebase
-Console. No existen archivos de reglas en el repositorio. Si la regla
-no está definida, la consulta desde DriverApp fallará en producción con
-un error de permiso o advertencia de cliente no optimizado.
+Console, que es la **única fuente autoritativa** de las reglas (ver la
+nota de niveles en §9). El repositorio **ya no mantiene un volcado local**
+de reglas (ver §10). Si la regla no está definida, la
+consulta desde DriverApp fallará en producción con un error de permiso o
+advertencia de cliente no optimizado.
 
 ## 9. Reglas de Seguridad y Mínimo Privilegio (RBAC)
+
+### Niveles de información sobre RTDB (no confundir)
+
+Esta sección describe **tres niveles distintos** que no deben mezclarse:
+
+1. **Contrato de datos (a)**: rutas y campos que las aplicaciones
+   efectivamente leen/escriben. Verificable en el código de cada app.
+   Es lo que documenta el resto de este archivo (§3–§6).
+2. **Reglas locales (b)**: la versión de reglas que en algún momento se
+   capturó en el repositorio (hoy **retirada**).
+   Era una captura histórica (S2), nunca una representación garantizada de
+   lo desplegado.
+3. **Permisos efectivos (c)**: las reglas realmente desplegadas en la
+   instancia de Firebase. **Solo verificables desde Firebase Console.**
+   Marcadas como **[NO VERIFICABLE]** desde el repositorio.
+
+Las afirmaciones de seguridad de este documento describen (a) y (b). No
+certifican (c): hasta contrastar con Console, los permisos efectivos
+permanecen **[NO VERIFICABLE]**.
 
 ### Modelo de autorización admin (post-migración)
 
@@ -473,10 +497,10 @@ admins:
 ```
 
 **Alternativa descartada**: autorizar por dominio de email
-(`auth.token.email.matches('.*@burritodriver.com')`). Se rechazó porque
+(`auth.token.email.matches('.*@<dominio>')`). Se rechazó porque
 `SignUpScreen.tsx:86` acepta emails arbitrarios sin verificación
 (`emailVerified` no se consulta ni exige en ningún repo), por lo que un
-atacante podía registrarse con cualquier correo `@burritodriver.com`.
+atacante podía registrarse con un correo del dominio permitido.
 
 **Postura fail-closed**: `/choferes_uids/{uid}` se escribe al final de
 `createChofer()`; si esa escritura falla, el chofer existe pero no
@@ -498,21 +522,28 @@ Consola.
 
 ### Discrepancias detectadas (S2) y resolución
 
-Comparación entre las reglas desplegadas en Firebase (`firebase-rules.json`)
-y la tabla de permisos anterior:
+Comparación entre la captura local de reglas (nivel b, hoy retirada)
+y la tabla de permisos anterior. Los permisos
+**desplegados** (nivel c) no son verificables desde el repositorio:
 
-1. **`/choferes` (.read)**: la tabla documentaba `Solo admin`, pero las
-   reglas desplegadas permiten `.read: "auth != null"` — cualquier
+1. **`/choferes` (.read)**: la tabla documentaba `Solo admin`, pero la
+   captura local de reglas permite `.read: "auth != null"` — cualquier
    usuario autenticado puede leer el directorio de conductores. El
    `.write` sí coincide (solo admin). **Estado: divergencia vigente**;
-   la tabla fue actualizada el 23/08/2026 para reflejar lo desplegado.
+   la tabla fue actualizada el 23/08/2026 para reflejar la captura.
    Restringir la lectura a solo-admin queda como decisión futura si el
    catálogo deja de ser necesario para clientes.
 2. **Nodo legacy `/ubicacion_burrito`**: estaba presente en las reglas
    con `.read: true`. **RESUELTO el 23/08/2026**: el bloque fue
    eliminado de las reglas publicadas (denegado por defecto) y retirado
-   del espejo `docs/firebase-rules.json`. Borrado del dato residual en
-   RTDB pendiente de Consola.
+   del espejo de reglas local (que ya no existe). Borrado del dato residual
+   en RTDB pendiente de Consola.
+3. **`/administradores` (.write)**: la tabla documenta `.write: false`
+   (solo Consola), pero la captura local (hoy retirada) permitía que un
+   admin existente se auto-escriba
+   (`root.child('administradores').child(auth.uid).exists()`).
+   **Divergencia no resuelta**: el permiso efectivo desplegado es
+   **[NO VERIFICABLE]** desde el repositorio. Debe contrastarse en Console.
 
 ### Predicado admin en reglas
 
@@ -528,10 +559,12 @@ Este predicado reemplaza al anterior:
 
 ### Riesgos residuales aceptados (MVP)
 
-1. **Escritura en `/ubicacion_buses`**: cualquier usuario autenticado
-   puede escribir coordenadas en cualquier bus. No hay verificación de
-   que el conductor esté asignado al bus. La mejora futura (restringir
-   escritura solo al conductor asignado) está planificada.
+1. **Escritura en `/ubicacion_buses`**: tras ADR-023 (23/08/2026) la
+   escritura está restringida a conductores indexados en `/choferes_uids`
+   o a administradores; ya no la puede hacer "cualquier usuario
+   autenticado". Sí persiste que **no** se verifica que el conductor esté
+   asignado al bus del día. Restringir la escritura al conductor asignado
+   sigue planificado (ver "Mejora planificada" en esta misma sección).
 2. **Lectura en `/ubicacion_buses`**: es pública (`true`). Cualquier
    persona con la URL de la base de datos puede leer ubicaciones en
    vivo.
@@ -552,10 +585,11 @@ autenticado.
 |-----------|----------|
 | `PROJECT_CONTEXT.md` | Visión general del sistema, propósito y limitaciones. |
 | `ARCHITECTURE.md` | Flujo de datos, ciclo de vida del tracking y topología del ecosistema. |
-| `firebase-rules.json` | Exportación exacta de las reglas RTDB desplegadas (captura de S2). |
+| Reglas desplegadas | Única fuente autoritativa: Firebase Console (nivel c). No hay volcado local de reglas en el repositorio. |
 | `TROUBLESHOOTING.md` | Incidentes relacionados con Firebase: persistence, path mismatch, regresiones, async initializeApp. |
-| `DECISIONS.md` | ADR sobre persistence desactivada, arquitectura serverless, migración admin, fix async initializeApp. |
-| BurritoDriverApp/README.md | Setup de Firebase, permisos Android y google-services.json. |
-| BurritoUserApp/README.md | Setup de Firebase, .env y google-services.json. |
+| `DECISIONS.md` | ADR sobre persistence desactivada, arquitectura serverless, migración del panel admin, dominios por rol y fix async initializeApp. |
+| `AdminWeb/README.md` | Setup del panel web, auth admin y convenciones de correo. |
+| `Driver/README.md` | Setup de Firebase, permisos Android y google-services.json. |
+| `User/README.md` | Setup de Firebase, .env y google-services.json. |
 | `ROADMAP.md` | Fases y prioridades para la evolución del esquema. |
 | `BUGS_RESUELTOS/` | Historial de bugs relacionados con Firebase RTDB. |
