@@ -42,7 +42,7 @@ transformación.
 
 - `isActive`: presente en nodos de tracking. Indica si el bus está
   transmitiendo activamente.
-- `activo`: presente en nodos de administración (choferes, buses,
+- `activo`: presente en nodos de administración (conductores, buses,
   asignaciones). Indica si el registro está vigente.
 
 ### Claves primarias
@@ -130,7 +130,8 @@ administrativo, se escribe `{ isActive: false }` en
   conductor.
 - **Escritura**: `admin_service.createChofer()` (desde AdminWeb).
 - **Lectura**: `admin_service.subscribeToChoferes()` (listener continuo
-  desde AdminWeb, panel admin).
+  desde AdminWeb, panel admin) y DriverApp, que lee `/choferes/{dni}`
+  (`SendCoordinates.tsx`) para mostrar el nombre del conductor logueado.
 - **Estructura**:
 
 ```json
@@ -139,11 +140,23 @@ administrativo, se escribe `{ isActive: false }` en
     "12345678": {
       "nombre": "Juan",
       "apellidos": "Pérez López",
-      "activo": true
+      "activo": true,
+      "uid": "1u7VkXlh0ZaqE2ysbf024i2QXPo1",
+      "creadoEn": 1776948195000,
+      "creadoPor": "jDhveoruZpgX5ZksfrWd5qcrDcp1"
     }
   }
 }
 ```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `nombre` | string | Nombre del conductor |
+| `apellidos` | string | Apellidos del conductor |
+| `activo` | boolean | `true` mientras el registro está vigente |
+| `uid` | string | UID de Firebase Auth del conductor; base del índice `/choferes_uids`. Puede faltar en conductores creados antes del 23/08/2026 |
+| `creadoEn` | number | Unix epoch ms de creación (`Date.now()`) |
+| `creadoPor` | string | UID del administrador que creó el registro |
 
 **Creación**: además de escribir en RTDB, `createChofer()` crea una
 cuenta de Firebase Auth con email `${dni}@conductor.com` y contraseña
@@ -160,7 +173,7 @@ ADR-025). El mismo mecanismo usa `createAdmin()` con `{dni}@admin.com`.
 - **Escritura**: `admin_service.createChofer()` (AdminWeb)
   escribe `{uid: dni}` inmediatamente después de crear la cuenta Auth y
   el registro en `/choferes`. Postura **fail-closed**: es la última
-  escritura de la transacción; si falla, el chofer existe pero no podrá
+  escritura de la transacción; si falla, el conductor existe pero no podrá
   publicar ubicación hasta reparar el índice manualmente.
 - **Lectura**: ninguna desde cliente (`.read: false`). Solo las reglas
   lo consultan internamente vía `root.child('choferes_uids')`.
@@ -189,14 +202,19 @@ ADR-025). El mismo mecanismo usa `createAdmin()` con `{dni}@admin.com`.
 {
   "buses": {
     "ABC-123": {
-      "modelo": "Mercedes-Benz",
-      "marca": "OF-1721",
-      "anio": "2020",
-      "activo": true
+      "activo": true,
+      "creadoEn": 1776948195000,
+      "creadoPor": "jDhveoruZpgX5ZksfrWd5qcrDcp1"
     }
   }
 }
 ```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `activo` | boolean | `true` mientras el bus está vigente |
+| `creadoEn` | number | Unix epoch ms de creación (`Date.now()`) |
+| `creadoPor` | string | UID del administrador que creó el registro |
 
 **Efecto secundario**: al crear un bus, se inicializa automáticamente
 `/ubicacion_buses/{placa}` con `{ isActive: false }`.
@@ -205,9 +223,10 @@ ADR-025). El mismo mecanismo usa `createAdmin()` con `{dni}@admin.com`.
 
 - **Propósito**: relación temporal entre un conductor y un bus para un
   turno diario. Clave generada por `push()` de Firebase.
-- **Escritura**: `admin_service.createAsignacion()` (desde AdminWeb y
-  DriverApp). Requiere administrador autenticado: si no existe sesión,
-  la operación falla sin escribir en RTDB.
+- **Escritura**: `admin_service.createAsignacion()` (desde AdminWeb,
+  panel admin). Requiere administrador autenticado: si no existe sesión,
+  la operación falla sin escribir en RTDB. La DriverApp solo lee
+  `/asignaciones`; no escribe.
 - **Lectura**: `admin_service.subscribeToAsignacionesHoy()` (listener
   continuo) y DriverApp (consulta puntual con `orderByChild('choferId')`).
 - **Estructura**:
@@ -220,6 +239,8 @@ ADR-025). El mismo mecanismo usa `createAdmin()` con `{dni}@admin.com`.
       "busId": "ABC-123",
       "fecha": "2025-06-09",
       "activo": true,
+      "horaInicio": 420,
+      "horaFin": 480,
       "createdAt": 1776948195000,
       "createdBy": "jDhveoruZpgX5ZksfrWd5qcrDcp1"
     }
@@ -231,14 +252,17 @@ ADR-025). El mismo mecanismo usa `createAdmin()` con `{dni}@admin.com`.
 |-------|------|-------------|
 | `choferId` | string | DNI del conductor (coincide con clave en `/choferes`) |
 | `busId` | string | Placa del bus (coincide con clave en `/buses`) |
-| `fecha` | string | Fecha del turno en formato `YYYY-MM-DD`. Es independiente de `createdAt`: el admin puede preparar asignaciones de un día futuro |
+| `fecha` | string | Fecha del turno en formato `YYYY-MM-DD`, calculada con `getTodayDateString()` (TZ local del navegador). El panel solo crea asignaciones para el día de hoy |
 | `activo` | boolean | `true` mientras el turno está vigente |
+| `horaInicio` | number | **Opcional**. Hora de inicio como minutos desde medianoche (0–1439). Se omite si el admin no la ingresa |
+| `horaFin` | number | **Opcional**. Hora de fin en el mismo formato que `horaInicio` |
 | `createdAt` | number | Unix timestamp en milisegundos del momento de creación (`Date.now()`). Formato legible solo en la UI (`toLocaleString('es-PE', { timeZone: 'America/Lima' })`) |
 | `createdBy` | string | UID de Firebase Auth del administrador que creó la asignación. Coincide con una clave de `/administradores`. Es auditoría, no seguridad: la autorización real sigue siendo `auth.uid` en `/administradores` vía reglas RTDB |
 
 **Validación de exclusividad**: al crear una asignación, el servicio
-verifica que ni el chofer ni el bus tengan otra asignación activa para
-la misma fecha.
+verifica que el **conductor** no tenga otra asignación activa para hoy.
+La validación del bus (`hasActiveBusAssignment`) existe en el servicio
+pero **no está conectada** al flujo de creación.
 
 **Cancelación**: al cancelar, se establece `activo: false`. El registro
 no se elimina.
@@ -253,8 +277,11 @@ los renderizan condicionalmente.
   Cada clave es el UID de Firebase Auth del administrador. La mera
   existencia de la clave (`snapshot.exists()`) define que el usuario es
   administrador. **No existe ni se lee un campo `rol`**.
-- **Escritura**: exclusivamente manual desde Firebase Console. Las reglas
-  de RTDB tienen `.write: false` sobre este nodo.
+- **Escritura**: la gestión se realiza desde **AdminWeb** (`AdminsScreen`
+  → `createAdmin()`), que crea la cuenta Auth `${dni}@admin.com` y
+  escribe el nodo. El **primer administrador** debe crearse manualmente
+  desde Firebase Console (bootstrap): es el único que no puede crearse
+  desde el panel.
 - **Lectura**: AdminWeb — `admin_check.ts` (`existeAdministrador(uid)`)
   para el auth gate post-login. RTDB Security Rules — para el predicado
   admin en todos los nodos administrativos.
@@ -263,24 +290,30 @@ los renderizan condicionalmente.
 ```json
 {
   "administradores": {
-    "abcDef123456UidAdmin": true
-  }
-}
-```
-
-El valor mínimo es `true` (RTDB no permite valores nulos).
-Opcionalmente puede almacenar `{ nombre, dni }` para trazabilidad:
-
-```json
-{
-  "administradores": {
     "abcDef123456UidAdmin": {
-      "nombre": "Admin UNMSM",
-      "dni": "77777777"
+      "dni": "77777777",
+      "nombres": "Admin",
+      "apellidos": "UNMSM",
+      "correo": "77777777@admin.com",
+      "creadoEn": 1776948195000,
+      "creadoPor": "jDhveoruZpgX5ZksfrWd5qcrDcp1"
     }
   }
 }
 ```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `dni` | string | DNI del administrador |
+| `nombres` | string | Nombres del administrador |
+| `apellidos` | string | Apellidos del administrador |
+| `correo` | string | Email de Auth (`${dni}@admin.com`) |
+| `creadoEn` | number | Unix epoch ms de creación (`Date.now()`) |
+| `creadoPor` | string | UID del administrador que creó la cuenta (o `null` si se creó desde Consola) |
+
+Se aceptan formatos **legacy** para el valor del nodo: `true` (mínimo, RTDB
+no permite valores nulos) o `{ "nombre", "dni" }`. La verificación de rol
+solo comprueba que la clave exista, por lo que ambos siguen siendo válidos.
 
 **Propiedad del nodo**: AdminWeb (admin) escribe/lee los nodos de gestión
 (`/choferes`, `/buses`, `/asignaciones`). La UserApp ya no consulta ni
@@ -323,8 +356,9 @@ su turno. El administrador accede al panel exclusivamente desde AdminWeb.
 **Nota sobre roles**: el campo `rol` en `/usuarios/{uid}` fue deprecado
 como fuente de autorización administrativa por ser auto-escribible por el
 propio usuario (regla `.write` del dueño sobre su propio nodo). La nueva
-fuente única de verdad es `/administradores/{auth.uid}`, que es inmutable
-desde el cliente (`.write: false`).
+fuente única de verdad es `/administradores/{auth.uid}`: la existencia de
+la clave define el rol admin y un usuario no puede autoasignárselo, porque
+la escritura sobre ese nodo exige ser un administrador ya existente.
 
 ## 6. Nodos de Feedback
 
@@ -378,7 +412,7 @@ reglas; todo el tracking fluye a través de `/ubicacion_buses/{placa}`.
 | `/choferes` | Definitivo | AdminWeb (admin) | Se mantiene. |
 | `/choferes_uids` | Definitivo | AdminWeb (createChofer) | Índice uid→DNI para reglas (ADR-023). Backfill manual para preexistentes. |
 | `/buses` | Definitivo | AdminWeb (admin) | Se mantiene. |
-| `/administradores` | Definitivo | Firebase Console | Se mantiene. Solo escritura manual. |
+| `/administradores` | Definitivo | AdminWeb (Admin) | Alta desde AdminWeb; el primer administrador se crea en Consola. |
 | `/usuarios` | Definitivo | UserApp | Se mantiene. |
 | `/comentarios` | Provisional | UserApp | Sin cambios previstos inmediatos. |
 | `/ubicacion_buses` | Definitivo | DriverApp (conductor) | Nodo único de tracking. Escritura restringida a conductores indexados y admins (ADR-023). |
@@ -467,13 +501,14 @@ root.child('administradores').child(auth.uid).exists()
 Esta expresión verifica que el UID del usuario autenticado exista como
 clave en `/administradores/`. A diferencia del modelo anterior
 (`/usuarios/{uid}/rol === 'admin'`), este predicado no es auto-escribible
-por el cliente porque `/administradores` tiene `.write: false`.
+por el cliente: para escribir en `/administradores` hay que ser ya un
+administrador existente.
 
 **Fundamento**: el modelo por `rol` en `/usuarios/{uid}` fue descartado
 porque la regla de escritura del propio usuario sobre su nodo permitía
 auto-asignarse `rol: 'admin'`. `/administradores` es una fuente de
-verdad inmutable desde el cliente, poblada exclusivamente por consola
-de Firebase.
+verdad que el cliente no puede autoasignarse; se puebla desde AdminWeb
+(y el primer administrador desde Consola).
 
 ### Modelo de autorización conductor (23/08/2026, ADR-023)
 
@@ -487,7 +522,7 @@ root.child('choferes_uids').child(auth.uid).exists()
 
 Esta expresión verifica que el UID del usuario autenticado exista como
 clave en `/choferes_uids/`. El índice se escribe automáticamente al
-crear un chofer (`createChofer()`) y tiene `.write` exclusivo de admin,
+crear un conductor (`createChofer()`) y tiene `.write` exclusivo de admin,
 por lo que un usuario cualquiera no puede auto-indexarse. La regla
 completa de escritura del tracking admite conductores indexados **o**
 admins:
@@ -498,12 +533,12 @@ admins:
 
 **Alternativa descartada**: autorizar por dominio de email
 (`auth.token.email.matches('.*@<dominio>')`). Se rechazó porque
-`SignUpScreen.tsx:86` acepta emails arbitrarios sin verificación
+`SignUpScreen.tsx:83` acepta emails arbitrarios sin verificación
 (`emailVerified` no se consulta ni exige en ningún repo), por lo que un
 atacante podía registrarse con un correo del dominio permitido.
 
 **Postura fail-closed**: `/choferes_uids/{uid}` se escribe al final de
-`createChofer()`; si esa escritura falla, el chofer existe pero no
+`createChofer()`; si esa escritura falla, el conductor existe pero no
 puede publicar ubicación hasta reparar el índice manualmente desde
 Consola.
 
@@ -513,7 +548,7 @@ Consola.
 |------|-------|--------|-------|
 | `/usuarios/{uid}` | Solo dueño | Solo dueño | Perfil personal |
 | `/comentarios` | `false` | `auth != null` | Solo escritura, lectura desde Consola |
-| `/administradores` | `auth != null` | `false` | Solo lectura. Escritura exclusiva desde Consola |
+| `/administradores` | `auth != null` | Admin existente | Lectura autenticada. Escritura de un administrador ya existente; el primer admin se crea en Consola |
 | `/asignaciones` | `auth != null` | Solo admin | DriverApp necesita lectura, admin escribe |
 | `/ubicacion_buses` | `true` | Conductor indexado o admin | Lectura pública; escritura vía `/choferes_uids` o `/administradores` (ADR-023) |
 | `/choferes` | `auth != null` | Solo admin | Catálogo legible por usuarios autenticados; escritura exclusiva de admin |
@@ -538,12 +573,12 @@ y la tabla de permisos anterior. Los permisos
    eliminado de las reglas publicadas (denegado por defecto) y retirado
    del espejo de reglas local (que ya no existe). Borrado del dato residual
    en RTDB pendiente de Consola.
-3. **`/administradores` (.write)**: la tabla documenta `.write: false`
-   (solo Consola), pero la captura local (hoy retirada) permitía que un
-   admin existente se auto-escriba
-   (`root.child('administradores').child(auth.uid).exists()`).
-   **Divergencia no resuelta**: el permiso efectivo desplegado es
-   **[NO VERIFICABLE]** desde el repositorio. Debe contrastarse en Console.
+3. **`/administradores` (.write)**: la tabla documentaba `.write: false`
+   (solo Consola), pero el permiso vigente permite que un administrador
+   ya existente cree otros administradores — que es exactamente lo que
+   hace AdminWeb (`createAdmin()`), con el primer administrador creado
+   por Consola. **RESUELTO**: la tabla se alineó al comportamiento real
+   del panel.
 
 ### Predicado admin en reglas
 

@@ -22,7 +22,7 @@ dependencias funcionales.
 | T3.1 | Multi-bus listener: migración de `/ubicacion_burrito` a `/ubicacion_buses`, store `Record<string, BurritoLocation>` | BurritoUserApp |
 | T3.2 | Multi-bus integración — validación del pipeline completo con datos reales (Motorola, caminata + bus, Firebase Console + UserApp). | UserApp |
 | T5.4 | Migración del Panel de Gestión fuera de la UserApp: módulo admin extraído a AdminWeb (ADR-025), poda de UserApp, reglas RTDB reescritas | AdminWeb + BurritoUserApp |
-| T5.5 | Seguridad — autorización por `/administradores/{auth.uid}` con `.write: false`, deprecación de `rol` como fuente admin | Consola Firebase |
+| T5.5 | Seguridad — autorización por `/administradores/{auth.uid}` (el cliente no puede autoasignarse admin), deprecación de `rol` como fuente admin | Consola Firebase |
 | ADR-018 | Bug async `initializeApp` en `admin_service.ts` — corregido con `await` + tipo `FirebaseApp` | BurritoDriverApp |
 | UX-01 | Ciclo 3 estados en SendCoordinates (separar stopProcess de signOut), FloatingBackButton, FloatingBackButton en CRUDs | BurritoDriverApp |
 | UX-02 | Native-stack en AdminNavigator, gestureEnabled, headers eliminados | BurritoDriverApp |
@@ -65,7 +65,7 @@ No requiere estar en el campus universitario.
 | 2 | T5.3: Timeout Check — ocultar buses sin actualización >60s | UserApp | T4.1 |
 | 3 | T4.2: Control de Turnos — botones INICIAR/FINALIZAR, creación de `/recorridos` | DriverApp | T4.1 |
 | 4 | T4.4: Multi-bus render completo — ShapeSource + SymbolLayer por cada bus activo | UserApp | T3.2 |
-| 5 | T4.5: Monitor de Flota — sección "Flota en servicio ahora" en AdminPanelScreen | DriverApp | T4.4 |
+| 5 | T4.5: Monitor de Flota — sección "Flota en servicio ahora" en el panel | AdminWeb | T4.4 |
 | 6 | T4.6: Estadísticas — StatsScreen con métricas de recorridos | UserApp | T4.2 |
 | 7 | T4.3: Geofencing (implementación) — máquina de estados con Haversine, histéresis 40m/80m | DriverApp | T4.2 |
 | 8 | T5.2: Smoothing (implementación) — algoritmo de interpolación (moving average / Kalman ligero) | UserApp | T4.4 |

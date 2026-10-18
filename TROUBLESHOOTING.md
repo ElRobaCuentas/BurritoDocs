@@ -99,7 +99,7 @@ Cada caso documenta: **síntoma**, **causa**, **diagnóstico**,
 | Campo | Descripción |
 |-------|-------------|
 | Síntoma | Con sesión guardada y sin red (modo avión), el auth gate de **AdminWeb** queda en spinner infinito. No hay CERRAR SESIÓN; el panel nunca se monta. (Originalmente diagnosticado en la DriverApp, antes de ADR-025) |
-| Causa | `existeAdministrador()` (`admin_check.ts`) usa `once('value')` de rnfirebase, que **offline cuelga indefinidamente — ni resuelve ni rechaza**; el estado de verificación queda `true` para siempre |
+| Causa | `existeAdministrador()` (`admin_check.ts`) usa `get()` del SDK JS de Firebase; sin red, la promesa **cuelga indefinidamente — ni resuelve ni rechaza**; el estado de verificación queda `true` para siempre |
 | Diagnóstico | Captura CDP del JS: log START de `existeAdministrador` aparece y el DONE jamás. `adb logcat` no muestra error (no es un throw, es una promesa que nunca termina) |
 | Solución | Acotar la llamada con timeout (`get()` con `withTimeout`, 10 s) y ofrecer REINTENTAR + CERRAR SESIÓN ante fallo. **Resuelto por C4.AUTH** (ver `docs/BUGS_RESUELTOS/driverapp.md` CASO 014); hoy vigente en el auth gate de **AdminWeb** (`App.tsx` + `admin_check.ts`) |
 | Prevención | Todo read `once()` de rnfirebase sin persistence (ADR-003) cuelga offline. No dejarlo sin límite de tiempo |
@@ -109,16 +109,16 @@ Cada caso documenta: **síntoma**, **causa**, **diagnóstico**,
 | Campo | Descripción |
 |-------|-------------|
 | Síntoma | El conductor no puede iniciar sesión, Firebase Auth devuelve `auth/user-not-found` |
-| Causa | La cuenta `${dni}@conductor.com` no existe en Firebase Auth. El administrador no creó el chofer desde el panel, o se ingresó un DNI incorrecto |
+| Causa | La cuenta `${dni}@conductor.com` no existe en Firebase Auth. El administrador no creó el conductor desde el panel, o se ingresó un DNI incorrecto |
 | Diagnóstico | Verificar en Firebase Console → Authentication que el email existe |
-| Solución | Crear el chofer desde el Panel de Gestión en **AdminWeb** (ChoferesScreen). El servicio `admin_service.ts` crea Auth + RTDB simultáneamente |
+| Solución | Crear el conductor desde el Panel de Gestión en **AdminWeb** (ChoferesScreen). El servicio `admin_service.ts` crea Auth + RTDB simultáneamente |
 | Prevención | El flujo admin siempre crea Auth con email `${dni}@conductor.com` y contraseña = DNI |
 
-### Error al crear chofer desde el panel admin
+### Error al crear conductor desde el panel admin
 
 | Campo | Descripción |
 |-------|-------------|
-| Síntoma | Al crear un chofer aparece "Error de autenticación" |
+| Síntoma | Al crear un conductor aparece "Error de autenticación" |
 | Causa | La app temporal de Firebase Auth (`initializeApp(config, 'reg_...')` con `inMemoryPersistence`) no se inicializa correctamente |
 | Diagnóstico | Revisar logs de Firebase en consola para errores de inicialización |
 | Solución | El código ya maneja la inicialización con try/catch. Si persiste, verificar que `google-services.json` (o la config web) esté presente |

@@ -261,7 +261,7 @@ necesita un flujo de autenticación y un alcance de datos distinto.
 
 - **Conductores**: login con email compuesto como
   `${dni}@burritodriver.com` sobre Firebase Auth. La contraseña es el
-  DNI, establecida al crear el chofer desde el panel admin. Sin
+  DNI, establecida al crear el conductor desde el panel admin. Sin
   registro público.
 - **Estudiantes**: registro con email/contraseña o Google Sign-In.
   Sesión persistente con AsyncStorage + Zustand persist.
@@ -354,7 +354,7 @@ ambas operaciones: "DETENER RECORRIDO" detiene la transmisión y escribe
 
 **Contexto:**
 
-Al crear un chofer desde el panel administrativo, el admin debe crear
+Al crear un conductor desde el panel administrativo, el admin debe crear
 una cuenta de Firebase Auth para el conductor (email
 `${dni}@burritodriver.com`). Si se usa la misma instancia de Auth,
 el admin se desconecta y se autentica como el nuevo conductor.
@@ -382,7 +382,7 @@ permanece intacta.
   es asíncrono y retorna `Promise<FirebaseApp>`. El código original
   no usaba `await`, por lo que `secondaryApp` recibía una Promise en
   lugar del objeto FirebaseApp. Se corrigió con `await` en
-  `admin_service.ts:79`.
+  `admin_service.ts`.
 
 **Nota de transición (ADR-025):** el panel administrativo ya no vive en la
 DriverApp. En **AdminWeb** el aislamiento respecto de la sesión del admin se
@@ -548,7 +548,10 @@ usuario sobre su nodo permitía auto-asignarse `rol: 'admin'`.
 descrita aquí fue reemplazada por la migración a **AdminWeb**. La
 autorización por `/administradores/{auth.uid}` (puntos 2 y 4) sigue vigente
 y se conserva; lo que cambió es la aplicación que aloja el panel
-administrativo.
+administrativo. El punto 5 (`.write: false` sobre `/administradores`)
+también evolucionó: el permiso vigente permite que un administrador
+existente cree otros administradores desde AdminWeb (`createAdmin()`),
+y solo el primer administrador se crea en Consola (bootstrap).
 
 **Referencias:** ARCHITECTURE.md (sección 3), FIREBASE_SCHEMA.md
 (secciones 4, 9), MVP.md (TA.1, TA.2, TA.3, TA.4), ADR-025.
@@ -605,7 +608,7 @@ try {
 - `secondaryApp` recibe correctamente un `FirebaseApp` en lugar de una
   Promise.
 - El duck-type check de `auth()` pasa exitosamente.
-- La creación de choferes funciona en el primer intento (ya no requiere
+- La creación de conductores funciona en el primer intento (ya no requiere
   un segundo intento gracias al registro síncrono en `APP_REGISTRY`).
 - TypeScript ahora detectaría el error si se omitiera el `await` (la
   variable está tipada como `FirebaseApp`, no como `any`).
@@ -981,7 +984,7 @@ Hasta esta fecha, la escritura del nodo de tracking era
 cualquier usuario autenticado podía sobrescribir la posición de
 cualquier bus, suplantando al conductor real. La auditoría de seguridad
 del 23/08 identificó además que la alternativa "barata" de restringir
-por dominio de email (`@burritodriver.com`) era inviable: `SignUpScreen.tsx:86`
+por dominio de email (`@burritodriver.com`) era inviable: `SignUpScreen.tsx:83`
 acepta emails arbitrarios sin verificación (`emailVerified` no se
 consulta ni exige en ninguno de los tres repos), por lo que un atacante
 podía registrarse como `atacante@burritodriver.com` y pasar el filtro.
@@ -1000,7 +1003,7 @@ en `/choferes`. Las reglas publicadas quedan así:
 - Nuevo bloque `/choferes_uids`: `.read: false`, `.write` solo admin.
 - Eliminado el bloque legacy `/ubicacion_burrito` (denegado por defecto).
 
-Los choferes preexistentes se poblaron con backfill manual desde
+Los conductores preexistentes se poblaron con backfill manual desde
 Consola (2 entradas, verificadas). La lectura pública del tracking se
 mantiene intacta (requisito funcional de UserApp).
 
@@ -1022,16 +1025,16 @@ mantiene intacta (requisito funcional de UserApp).
   uid esté indexado en `/choferes_uids` o sea admin. Suplantación de
   bus desde cuentas de estudiante: cerrada.
 - Postura fail-closed: si falla la última escritura de `createChofer()`
-  (el índice), el chofer existe pero no puede transmitir hasta reparar
+  (el índice), el conductor existe pero no puede transmitir hasta reparar
   el índice manualmente desde Consola.
-- Todo chofer creado desde una build vieja de AdminWeb desplegada
+- Todo conductor creado desde una build vieja de AdminWeb desplegada
   nacerá SIN índice (no podrá trackear): obligatorio redeployar
   Firebase Hosting tras el merge.
 - `/choferes_uids` duplica parcialmente información de `/choferes`;
   mantener ambos sincronizados es responsabilidad de `createChofer()`.
 - La matriz de validación quedó probada end-to-end el 23/08: simulador
   de reglas (estudiante denegado, conductor permitido, admin permitido)
-  + pruebas reales web y móvil con choferes nuevo (99999999) y
+  + pruebas reales web y móvil con conductores nuevos (99999999) y
   backfilleado (44332211).
 
 **Referencias:** FIREBASE_SCHEMA.md (§2 claves primarias, §4 nodo
@@ -1072,8 +1075,8 @@ diseño:
    que sí necesitó `/choferes_uids`).
 3. **Alcance limitado a asignaciones**: `choferes` y `buses` NO reciben
    campos de auditoría por ahora. Criterio: solo se guarda un dato si
-   cambia una decisión operativa del MVP. La fecha de alta de un
-   chofer/bus no condiciona nada hoy; agregarla sería construir el
+   cambia una decisión    operativa del MVP. La fecha de alta de un
+   conductor/bus no condiciona nada hoy; agregarla sería construir el
    post-MVP antes de validar el piloto.
 
 **Decisión complementaria — semántica de "desactivar" (Opción A):**
@@ -1099,7 +1102,7 @@ Razones:
 
 - String localizado en RTDB: descartada (ver punto 1).
 - `createdBy: 'unknown'` como fallback: descartada (dato falso).
-- Auditoría también en choferes/buses: diferida al post-MVP.
+- Auditoría también en conductores/buses: diferida al post-MVP.
 - Revocación GPS inmediata al desactivar: descartada para MVP (Opción B,
   ver arriba).
 

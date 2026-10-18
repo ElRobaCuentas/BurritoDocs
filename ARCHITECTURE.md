@@ -47,7 +47,7 @@ websockets nativos del SDK.
 
 - **DriverApp (conductores)**: Firebase Auth con email compuesto como
   `${dni}@conductor.com`. Contraseña = DNI del conductor, establecida al
-  crear el chofer desde AdminWeb.
+  crear el conductor desde AdminWeb.
 - **AdminWeb (administradores)**: Firebase Auth con email
   `${dni}@admin.com`. Tras el login, el auth gate consulta
   `/administradores/{auth.uid}` para autorizar el acceso al panel.
@@ -417,26 +417,26 @@ StackNavigator detecta isLoggedIn=true → renderiza DrawerNavigator (MapScreen)
 ### Flujo admin (AdminWeb)
 
 ```
-Admin crea chofer:
+Admin crea conductor:
     ChoferesScreen → createChofer({ dni, nombre, apellidos })
         → app temporal: createUserWithEmailAndPassword(`${dni}@conductor.com`, dni)
         → /choferes/{dni}.set({ nombre, apellidos, activo: true, uid, creadoEn, creadoPor })
         → /choferes_uids/{uid}.set(dni)
 
 Admin crea bus:
-    BusesScreen → createBus({ placa, modelo, marca, anio })
-        → /buses/{placa}.set({ modelo, marca, anio, activo: true })
+    BusesScreen → createBus({ placa })
+        → /buses/{placa}.set({ activo: true, creadoEn, creadoPor })
         → /ubicacion_buses/{placa}.set({ isActive: false })
 
 Admin asigna:
-    AsignacionesScreen → createAsignacion(choferId, busId)
-        → Valida que chofer y bus no tengan asignación activa hoy
-        → /asignaciones.push().set({ choferId, busId, fecha, activo: true, createdAt, createdBy })
+    AsignacionesScreen → createAsignacion(choferId, busId, horaInicio?, horaFin?)
+        → Valida que el conductor no tenga otra asignación activa hoy
+        → /asignaciones.push().set({ choferId, busId, fecha, activo: true, horaInicio, horaFin, createdAt, createdBy })
 
 Admin crea admin:
     AdminsScreen → createAdmin(dni, nombres, apellidos, password)
         → app temporal: createUserWithEmailAndPassword(`${dni}@admin.com`, password)
-        → /administradores/{uid}.set({ dni, nombres, apellidos, correo })
+        → /administradores/{uid}.set({ dni, nombres, apellidos, correo, creadoEn, creadoPor })
 ```
 
 ## 6. Componentes Principales

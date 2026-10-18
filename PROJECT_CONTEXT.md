@@ -46,7 +46,7 @@ geofencing y smoothing) descritas en MVP.md y ROADMAP.md.
 ### AdminWeb
 
 - Dispositivo: navegador (SPA web).
-- Función: panel de gestión — CRUD de choferes, buses, asignaciones y
+- Función: panel de gestión — CRUD de conductores, buses, asignaciones y
   administradores.
 - Usuarios: administradores de la Oficina de Transportes.
 - Autenticación: login con DNI + contraseña sobre Firebase Auth, con email
@@ -63,7 +63,7 @@ AdminWeb  ──escribe──→ Firebase RTDB
 Firebase Realtime Database actúa como el bus de datos. La UserApp nunca
 escribe coordenadas; solo lee. No existe backend propio ni API intermedia.
 La DriverApp escribe el tracking (`/ubicacion_buses`) y AdminWeb los nodos
-de administración (choferes, buses, asignaciones).
+de administración (conductores, buses, asignaciones).
 
 ## 3. Stack Tecnológico
 
@@ -85,6 +85,7 @@ de administración (choferes, buses, asignaciones).
 - Autenticación de estudiantes (email/contraseña y Google Sign-In).
 - Asignación de conductores a buses mediante panel administrativo.
 - Captura de coordenadas GPS y transmisión continua a Firebase, incluso con la app en segundo plano.
+- Presencia del bus (heartbeat) cada 8 s, independiente del GPS, para mantener el timestamp fresco cuando el bus está detenido (T4.1).
 - Recepción en tiempo real de la ubicación de todos los buses activos en
   la aplicación del estudiante mediante Mapbox. El backend de tracking
   multi-bus está implementado (T3.1): el store de Zustand almacena las
@@ -103,13 +104,13 @@ de administración (choferes, buses, asignaciones).
   código administrativo y la DriverApp quedó exclusiva de conductores; el
   panel reside en AdminWeb (ADR-025).
 - **Modelo de autorización**: reemplazado de `/usuarios/{uid}/rol` a
-  `/administradores/{auth.uid}` (inmutable desde el cliente).
+  `/administradores/{auth.uid}`, que el cliente no puede autoasignarse
+  (la escritura exige ser un administrador ya existente).
 - **Bug de inicialización asíncrona**: corregido. `initializeApp()` del
   SDK ahora se invoca con `await`.
 
 ### Funcionalidades pendientes (ver MVP.md y ROADMAP.md)
 
-- Heartbeat (mantener timestamp fresco en buses detenidos — T4.1).
 - Timeout check (ocultar buses fantasma tras inactividad — T5.3).
 - Control de turnos (inicio/fin de recorrido — T4.2).
 - Render multi-marcador completo en el mapa (T4.4).
@@ -129,9 +130,10 @@ de administración (choferes, buses, asignaciones).
   la transmisión activa está implementado sobre APIs nativas de Android.
   DriverApp no está probada ni soportada en iOS.
 - **Render de un solo marcador**: el backend multi-bus ya está implementado (T3.1), pero la UI del mapa aún muestra un único marcador (seleccionando el bus activo más reciente). El render multi-marcador completo está planificado en T4.4.
-- **Bootstrap admin manual**: crear un administrador requiere ir a Firebase
-  Console, crear la cuenta Auth y copiar el UID a `/administradores/{uid}`.
-  Aceptable por el número reducido de admins.
+- **Bootstrap del primer admin manual**: crear el **primer** administrador
+  requiere ir a Firebase Console, crear la cuenta Auth y registrar su UID en
+  `/administradores/{uid}`. Los siguientes administradores se crean desde el
+  panel (AdminWeb → AdminsScreen). Aceptable por el número reducido de admins.
 
 ## 6. Documentación Relacionada
 
