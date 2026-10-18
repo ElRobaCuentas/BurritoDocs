@@ -273,7 +273,7 @@ actual del proyecto, planificadas en fases futuras del roadmap.
 | No hay geofencing ni cierre automático de vueltas | Planificado (Fase 2) |
 | iOS no soportado para DriverApp | Limitación de plataforma |
 | Test unitario de DriverApp (`__tests__/App.test.tsx`) está roto (hereda de archivo `../App` inexistente) | Por resolver |
-| El archivo `gradle.properties` contiene credenciales de release en texto plano (`burrito123`) | Requiere rotación de claves (Bloque 5, S3) |
+| Exposición histórica de la contraseña de firma de release | La contraseña quedó expuesta en el historial de Git. El keystore de release no se encontró en el historial auditado y no hay evidencia identificada de uso indebido. La configuración de firma actual se conserva. No se ha decidido rotar la clave; la decisión se reevaluará si aparecen evidencias de compromiso o cambian las condiciones de riesgo. |
 | Corte de red **durante** la sesión: Firebase no dispara `onError`; en DriverApp la recuperación depende del heartbeat T4.1 (catch-reset) y en UserApp el bus caducado se oculta por expiración de timestamp (estrategia C) | Atenuado por C4.6+T4.1 (22/08); escenario obligatorio del checklist de T1 |
 | El icono/marca del menú lateral usa el placeholder por defecto de react-navigation; el logo oficial solo llega al splash y al launcher | Por resolver (rebranding incompleto) |
 
