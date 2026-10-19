@@ -141,30 +141,50 @@ timeout o fallo de red va a `error` con reintento / cierre de sesión.
 
 ```
 src/
-├── main.tsx                         # Entry point
+├── main.tsx                         # Entry point (BrowserRouter + ToastProvider)
 ├── App.tsx                          # Auth gate: sesión → rol (checking/admin/denied/error)
+├── index.css                        # Importa src/styles/* (sistema de diseño por tokens)
+├── styles/                          # tokens.css · base.css · layout.css · components.css · overlays.css · screens.css
 ├── screen/
 │   └── LoginScreen.tsx              # Login admin (DNI + contraseña → {dni}@admin.com)
 ├── navigation/
-│   └── AdminNavigator.tsx           # Rutas del panel
+│   └── AdminNavigator.tsx           # Rutas del panel (renderizadas dentro del AppShell)
 ├── features/admin/
 │   ├── screen/
-│   │   ├── AdminPanelScreen.tsx     # Menú principal del admin
+│   │   ├── AdminPanelScreen.tsx     # Dashboard: métricas de hoy + accesos a módulos
 │   │   ├── ChoferesScreen.tsx       # Gestión de conductores (crear, editar, activar/desactivar)
 │   │   ├── BusesScreen.tsx          # CRUD de buses
 │   │   ├── AsignacionesScreen.tsx   # Asignaciones diarias conductor ↔ bus
 │   │   └── AdminsScreen.tsx         # Gestión de administradores
-│   └── services/
-│       ├── admin_service.ts         # CRUD (Firebase Auth + RTDB)
-│       └── admin_check.ts           # existeAdministrador(uid): Promise<boolean>
+│   ├── services/
+│   │   ├── admin_service.ts         # CRUD (Firebase Auth + RTDB)
+│   │   └── admin_check.ts           # existeAdministrador(uid): Promise<boolean>
+│   └── utils/
+│       └── turno.ts                 # Parseo/format de horarios de turno
 └── shared/
     ├── config/
     │   ├── env.ts                   # Validación de variables VITE_FIREBASE_*
     │   └── firebase.ts              # Firebase Auth + RTDB (Firebase JS SDK)
+    ├── layout/
+    │   ├── AppShell.tsx             # Sidebar + topbar + drawer móvil; provee la sesión
+    │   └── SessionContext.tsx       # Datos del admin en sesión (useSession)
+    ├── ui/                          # Primitivas (Button, Field, Card, StatCard, Modal/ConfirmDialog, Toast, Icon…)
     └── utils/
         ├── dni.ts                   # Normalización y validación de DNI (8 dígitos)
+        ├── format.ts                # Formateo de fechas y nombres de admin
         └── timeout.ts               # Helper con timeout para reads de RTDB
 ```
+
+### Interfaz (sistema de diseño)
+
+La interfaz usa CSS propio con **tokens** (sin dependencias de UI). `index.css`
+importa las hojas de `src/styles/`; la paleta es "Operations Blue" (primario
+`#2563EB`, complementario `#06B6D4`, sidebar `#0F172A`, fondo `#F8FAFC`, solo
+tema claro). El **AppShell** (`shared/layout/AppShell.tsx`) aporta sidebar +
+topbar en escritorio y drawer en móvil, muestra la identidad del admin en
+sesión y la expone vía `SessionContext`/`useSession`. Las pantallas se
+componen con las primitivas de `shared/ui/`; las confirmaciones usan
+`ConfirmDialog` (no `window.confirm`) y los avisos, toasts.
 
 ### Módulo Admin
 
@@ -463,20 +483,26 @@ Admin crea admin:
 
 | Archivo | Responsabilidad |
 |---------|----------------|
-| `src/main.tsx` | Entry point de la SPA |
+| `src/main.tsx` | Entry point de la SPA (BrowserRouter + ToastProvider) |
 | `src/App.tsx` | Auth gate: sesión → rol (checking/admin/denied/error) |
+| `src/index.css` + `src/styles/*` | Sistema de diseño por tokens (tokens, base, layout, componentes, overlays, pantallas) |
 | `src/screen/LoginScreen.tsx` | Login admin (DNI → `{dni}@admin.com`) |
-| `src/navigation/AdminNavigator.tsx` | Rutas de las pantallas del panel |
+| `src/navigation/AdminNavigator.tsx` | Rutas del panel (dentro del `AppShell`) |
+| `src/shared/layout/AppShell.tsx` | Sidebar + topbar + drawer móvil; provee la sesión |
+| `src/shared/layout/SessionContext.tsx` | Datos del admin en sesión (`useSession`) |
+| `src/shared/ui/*` | Primitivas de UI y overlays (Button, Field, Card, Modal, Toast, Icon…) |
 | `src/features/admin/services/admin_service.ts` | CRUD (Auth temporal + RTDB) |
 | `src/features/admin/services/admin_check.ts` | `existeAdministrador(uid)` con timeout |
-| `src/features/admin/screen/AdminPanelScreen.tsx` | Menú principal del admin |
+| `src/features/admin/screen/AdminPanelScreen.tsx` | Dashboard: métricas de hoy + accesos a módulos |
 | `src/features/admin/screen/ChoferesScreen.tsx` | Gestión de conductores (crear, editar, activar/desactivar) |
 | `src/features/admin/screen/BusesScreen.tsx` | CRUD de buses |
 | `src/features/admin/screen/AsignacionesScreen.tsx` | Asignaciones diarias |
 | `src/features/admin/screen/AdminsScreen.tsx` | Gestión de administradores |
+| `src/features/admin/utils/turno.ts` | Parseo/format de horarios de turno |
 | `src/shared/config/env.ts` | Validación de variables `VITE_FIREBASE_*` |
 | `src/shared/config/firebase.ts` | Instancia de Firebase (Firebase JS SDK) |
 | `src/shared/utils/dni.ts` | Normalización y validación de DNI (8 dígitos) |
+| `src/shared/utils/format.ts` | Formateo de fechas y nombres de admin |
 
 ### BurritoUserApp
 
