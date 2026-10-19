@@ -60,6 +60,16 @@ Cada caso documenta: **síntoma**, **causa**, **diagnóstico**,
 | Solución | Crear `.env` con `MAPBOX_PUBLIC_TOKEN=<token>` y `GOOGLE_WEB_CLIENT_ID=<id>` |
 | Prevención | README documenta las variables requeridas. `env.d.ts` las tipa |
 
+### AdminWeb no arranca: "Configuración de Firebase incompleta"
+
+| Campo | Descripción |
+|-------|-------------|
+| Síntoma | Al abrir AdminWeb, la app no monta y la consola del navegador muestra `Configuración de Firebase incompleta. Faltan las variables: ...` |
+| Causa | Falta una o más variables `VITE_FIREBASE_*` en el archivo `.env` (o el deploy se compiló sin ellas) |
+| Diagnóstico | `shared/config/env.ts` valida las cinco variables al iniciar y nombra las faltantes. Revisar `.env` contra `.env.example` |
+| Solución | Completar las variables faltantes en `.env` (ver `.env.example`) y reconstruir (`npm run build`) |
+| Prevención | No versionar `.env` (gitignored); usar `.env.example` como plantilla. Las variables `VITE_*` son config cliente, no secretos |
+
 ## 4. Firebase y RTDB
 
 ### Missing index en /asignaciones
@@ -133,6 +143,26 @@ Cada caso documenta: **síntoma**, **causa**, **diagnóstico**,
 | Diagnóstico | Verificar que `.env` existe y contiene `GOOGLE_WEB_CLIENT_ID` |
 | Solución | Agregar o corregir el `webClientId` en `.env`. El valor se obtiene de Firebase Console → Project Settings → General → Web apps |
 | Prevención | README de UserApp documenta las variables de entorno |
+
+### AdminWeb muestra "No autorizado" al iniciar sesión siendo administrador
+
+| Campo | Descripción |
+|-------|-------------|
+| Síntoma | Al entrar como administrador, el panel muestra brevemente "No autorizado" antes de cargar |
+| Causa | El auth gate trataba el estado pendiente (`isAdmin === null`, mientras se comprobaba el rol) como denegación |
+| Diagnóstico | Ocurría en cada login de admin, incluso con `/administradores/{uid}` existente |
+| Solución | **Resuelto**: `App.tsx` usa un estado explícito de rol (`checking` → `admin` / `denied` / `error`). Mientras está en `checking` no muestra "No autorizado". `PERMISSION_DENIED` en `/administradores/{uid}` se interpreta como `denied`; timeout/red van a `error` recuperable |
+| Prevención | No derivar la pantalla de denegación de un estado todavía pendiente; distinguir siempre "comprobando" de "denegado" |
+
+### Diferenciar "No autorizado" de "No se pudo verificar" (AdminWeb)
+
+| Campo | Descripción |
+|-------|-------------|
+| Síntoma | Un usuario autenticado no entra al panel |
+| Causa | Dos causas distintas: (a) la cuenta no está en `/administradores/{uid}`; (b) fallo de red/timeout al leer ese nodo |
+| Diagnóstico | "No autorizado" = la regla RTDB devolvió `PERMISSION_DENIED` (la cuenta no es admin). "No se pudo verificar" = timeout (10 s) o error de red: el estado del rol es desconocido |
+| Solución | Si es "No autorizado": agregar el `uid` en `/administradores/{uid}` (o crear el admin desde el panel) o cerrar sesión. Si es "No se pudo verificar": revisar la conexión y pulsar Reintentar. **Nunca** se concede acceso por defecto |
+| Prevención | No convertir errores de red en denegaciones definitivas ni viceversa (`admin_check.ts`) |
 
 ## 6. Foreground Service y Android
 

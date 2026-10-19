@@ -130,17 +130,19 @@ detallado.
 src/main.tsx → src/App.tsx
 ```
 
-`App.tsx` es el auth gate: escucha `onAuthStateChanged`; con sesión,
+`App.tsx` es el auth gate: escucha `onAuthStateChanged` y mantiene un estado
+explícito de rol (`checking` → `admin` / `denied` / `error`). Con sesión,
 consulta `existeAdministrador(uid)` sobre `/administradores/{uid}` (con
-timeout de 10 s) y decide entre el panel, la pantalla "No autorizado" o un
-estado de error con reintento / cierre de sesión.
+timeout de 10 s); mientras está en `checking` no muestra "No autorizado".
+Un `PERMISSION_DENIED` (la regla exige ser admin) equivale a `denied`; un
+timeout o fallo de red va a `error` con reintento / cierre de sesión.
 
 ### Estructura de archivos
 
 ```
 src/
 ├── main.tsx                         # Entry point
-├── App.tsx                          # Auth gate: sesión → admin check → role error
+├── App.tsx                          # Auth gate: sesión → rol (checking/admin/denied/error)
 ├── screen/
 │   └── LoginScreen.tsx              # Login admin (DNI + contraseña → {dni}@admin.com)
 ├── navigation/
@@ -148,7 +150,7 @@ src/
 ├── features/admin/
 │   ├── screen/
 │   │   ├── AdminPanelScreen.tsx     # Menú principal del admin
-│   │   ├── ChoferesScreen.tsx       # CRUD de conductores
+│   │   ├── ChoferesScreen.tsx       # Gestión de conductores (crear, editar, activar/desactivar)
 │   │   ├── BusesScreen.tsx          # CRUD de buses
 │   │   ├── AsignacionesScreen.tsx   # Asignaciones diarias conductor ↔ bus
 │   │   └── AdminsScreen.tsx         # Gestión de administradores
@@ -156,41 +158,46 @@ src/
 │       ├── admin_service.ts         # CRUD (Firebase Auth + RTDB)
 │       └── admin_check.ts           # existeAdministrador(uid): Promise<boolean>
 └── shared/
-    ├── config/firebase.ts           # Firebase Auth + RTDB (Firebase JS SDK)
-    └── utils/timeout.ts             # Helper con timeout para reads de RTDB
+    ├── config/
+    │   ├── env.ts                   # Validación de variables VITE_FIREBASE_*
+    │   └── firebase.ts              # Firebase Auth + RTDB (Firebase JS SDK)
+    └── utils/
+        ├── dni.ts                   # Normalización y validación de DNI (8 dígitos)
+        └── timeout.ts               # Helper con timeout para reads de RTDB
 ```
 
 ### Módulo Admin
 
 Accesible solo para usuarios cuyo `auth.uid` existe en
-`/administradores/`. CRUD completo contra RTDB:
+`/administradores/`. Gestión contra RTDB:
 
 | Entidad | Path | Operaciones |
 |---------|------|-------------|
-| Choferes | `/choferes/{dni}` | Crear (Auth + RTDB + índice `/choferes_uids`), listar, editar, toggle activo, eliminar |
+| Choferes | `/choferes/{dni}` | Crear (Auth + RTDB + índice `/choferes_uids`), listar, editar, activar/desactivar (no se eliminan) |
 | Buses | `/buses/{placa}` | Crear + init `/ubicacion_buses/{placa}`, listar, toggle, eliminar |
 | Asignaciones | `/asignaciones/{pushId}` | Crear con validación de exclusividad, listar, cancelar |
 | Administradores | `/administradores/{uid}` | Crear (Auth + RTDB), listar, editar, eliminar (nodo) |
 
-Al crear o eliminar cuentas de Auth, `admin_service.ts` usa una **app
-temporal por operación** con `inMemoryPersistence`
-(`initializeApp(config, 'reg_...' / 'del_...' / 'admin_...')`) para no
-sobrescribir la sesión del admin actual (ver ADR-011 y ADR-025).
+Al crear cuentas de Auth, `admin_service.ts` usa una **app temporal por
+operación** con `inMemoryPersistence` (`initializeApp(config, 'reg_...' /
+'admin_...')`) para no sobrescribir la sesión del admin actual (ver ADR-011 y
+ADR-025).
 
 ### admin_check.ts
 
 `existeAdministrador(uid: string): Promise<boolean>` consulta
 `/administradores/{uid}` con `get()` y retorna `snapshot.exists()`, acotado
-por un timeout de 10 s (C4.AUTH). Es la fuente de verdad del auth gate de
-AdminWeb.
+por un timeout de 10 s (C4.AUTH). Un `PERMISSION_DENIED` se interpreta como
+`false` (no es admin); los fallos de red se propagan como error. Es la fuente
+de verdad del auth gate de AdminWeb.
 
 ### Navegación
 
 ```
-Login → (sesión) → existeAdministrador(uid)?
-    ├── Sí    → AdminNavigator (AdminPanelScreen → Choferes / Buses / Asignaciones / Admins)
-    ├── No    → "No autorizado" (Cerrar Sesión)
-    └── Error → "No se pudo verificar tu cuenta" (Reintentar / Cerrar Sesión)
+Login → (sesión) → estado "checking" mientras existeAdministrador(uid)?
+    ├── nodo existe      → AdminNavigator (AdminPanelScreen → Choferes / Buses / Asignaciones / Admins)
+    ├── PERMISSION_DENIED → "No autorizado" (Cerrar Sesión)
+    └── timeout / red     → "No se pudo verificar tu cuenta" (Reintentar / Cerrar Sesión)
 ```
 
 ---
@@ -457,17 +464,19 @@ Admin crea admin:
 | Archivo | Responsabilidad |
 |---------|----------------|
 | `src/main.tsx` | Entry point de la SPA |
-| `src/App.tsx` | Auth gate: sesión → admin check → pantalla de rol/error |
+| `src/App.tsx` | Auth gate: sesión → rol (checking/admin/denied/error) |
 | `src/screen/LoginScreen.tsx` | Login admin (DNI → `{dni}@admin.com`) |
 | `src/navigation/AdminNavigator.tsx` | Rutas de las pantallas del panel |
 | `src/features/admin/services/admin_service.ts` | CRUD (Auth temporal + RTDB) |
 | `src/features/admin/services/admin_check.ts` | `existeAdministrador(uid)` con timeout |
 | `src/features/admin/screen/AdminPanelScreen.tsx` | Menú principal del admin |
-| `src/features/admin/screen/ChoferesScreen.tsx` | CRUD de conductores |
+| `src/features/admin/screen/ChoferesScreen.tsx` | Gestión de conductores (crear, editar, activar/desactivar) |
 | `src/features/admin/screen/BusesScreen.tsx` | CRUD de buses |
 | `src/features/admin/screen/AsignacionesScreen.tsx` | Asignaciones diarias |
 | `src/features/admin/screen/AdminsScreen.tsx` | Gestión de administradores |
+| `src/shared/config/env.ts` | Validación de variables `VITE_FIREBASE_*` |
 | `src/shared/config/firebase.ts` | Instancia de Firebase (Firebase JS SDK) |
+| `src/shared/utils/dni.ts` | Normalización y validación de DNI (8 dígitos) |
 
 ### BurritoUserApp
 
@@ -495,7 +504,7 @@ Admin crea admin:
 | Firebase Crashlytics | Sí (`setUserId` con el uid del conductor) | Configurado en firebase.json |
 | ServerValue.TIMESTAMP | No | Sí (6 ocurrencias: ultimaConexion, feedback) |
 
-> **AdminWeb** usa Firebase Auth (login de admin + creación/eliminación de
+> **AdminWeb** usa Firebase Auth (login de admin + creación de
 > cuentas vía app temporal) y RTDB (gestión de `/choferes`, `/buses`,
 > `/asignaciones`, `/choferes_uids` y `/administradores`).
 

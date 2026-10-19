@@ -94,8 +94,9 @@ de administración (conductores, buses, asignaciones).
   independiente por cada bus. La UI actualmente muestra un solo marcador
   (seleccionando el bus activo más reciente); el render multi-marcador
   completo está planificado en T4.4.
-- **Interfaz administrativa**: en AdminWeb (SPA web). CRUD completo de
-  conductores, buses y asignaciones. Acceso por membresía en
+- **Interfaz administrativa**: en AdminWeb (SPA web). Gestión de
+  conductores (crear, editar, activar/desactivar — no se eliminan),
+  buses y asignaciones. Acceso por membresía en
   `/administradores/{auth.uid}`.
 - Dark mode en la app de estudiantes.
 - Compatibilidad con Android 14 (API 34), incluyendo soporte para Foreground Services de tipo location.
