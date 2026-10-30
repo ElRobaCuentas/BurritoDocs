@@ -154,13 +154,16 @@ src/
 │   │   ├── AdminPanelScreen.tsx     # Dashboard: métricas de hoy + accesos a módulos
 │   │   ├── ChoferesScreen.tsx       # Gestión de conductores (crear, editar, activar/desactivar)
 │   │   ├── BusesScreen.tsx          # CRUD de buses
-│   │   ├── AsignacionesScreen.tsx   # Asignaciones diarias conductor ↔ bus
+│   │   ├── AsignacionesScreen.tsx   # Asignaciones por fecha (hoy/futuro) con uno o varios turnos
 │   │   └── AdminsScreen.tsx         # Gestión de administradores
+│   ├── components/
+│   │   └── TurnosEditor.tsx         # Editor reutilizable de turnos
 │   ├── services/
 │   │   ├── admin_service.ts         # CRUD (Firebase Auth + RTDB)
 │   │   └── admin_check.ts           # existeAdministrador(uid): Promise<boolean>
 │   └── utils/
-│       └── turno.ts                 # Parseo/format de horarios de turno
+│       ├── turno.ts                 # Modelo, validación y formato de turnos
+│       └── turnoDraft.ts            # Estado de edición de turnos
 └── shared/
     ├── config/
     │   ├── env.ts                   # Validación de variables VITE_FIREBASE_*
@@ -172,6 +175,7 @@ src/
     └── utils/
         ├── dni.ts                   # Normalización y validación de DNI (8 dígitos)
         ├── format.ts                # Formateo de fechas y nombres de admin
+        ├── date.ts                  # Fechas de calendario America/Lima
         └── timeout.ts               # Helper con timeout para reads de RTDB
 ```
 
@@ -195,7 +199,7 @@ Accesible solo para usuarios cuyo `auth.uid` existe en
 |---------|------|-------------|
 | Choferes | `/choferes/{dni}` | Crear (Auth + RTDB + índice `/choferes_uids`), listar, editar, activar/desactivar (no se eliminan) |
 | Buses | `/buses/{placa}` | Crear + init `/ubicacion_buses/{placa}`, listar, toggle, eliminar |
-| Asignaciones | `/asignaciones/{pushId}` | Crear con validación de exclusividad, listar, cancelar |
+| Asignaciones | `/asignaciones/{pushId}` | Crear para hoy/futuro con uno o varios turnos, validar exclusividad conductor/fecha, listar, editar turnos, cancelar |
 | Administradores | `/administradores/{uid}` | Crear (Auth + RTDB), listar, editar, eliminar (nodo) |
 
 Al crear cuentas de Auth, `admin_service.ts` usa una **app temporal por
@@ -456,9 +460,16 @@ Admin crea bus:
         → /ubicacion_buses/{placa}.set({ isActive: false })
 
 Admin asigna:
-    AsignacionesScreen → createAsignacion(choferId, busId, horaInicio?, horaFin?)
-        → Valida que el conductor no tenga otra asignación activa hoy
-        → /asignaciones.push().set({ choferId, busId, fecha, activo: true, horaInicio, horaFin, createdAt, createdBy })
+    AsignacionesScreen → createAsignacion(choferId, busId, fecha, turnos[])
+        → Valida fecha Lima hoy/futuro y que el conductor no tenga otra asignación activa esa fecha
+        → Valida turnos (mínimo 1, inicio < fin, mismo día, sin solape) y los ordena
+        → /asignaciones.push().set({ choferId, busId, fecha, activo: true, turnos, horaInicio, horaFin, createdAt, createdBy })
+
+Admin edita turnos:
+    AsignacionesScreen → updateTurnos(asignacionId, turnos[])
+        → Valida/ordena los turnos y actualiza solo ese nodo
+        → Conserva choferId, busId, fecha, createdAt y createdBy
+        → horaInicio/horaFin quedan como espejo del primer turno
 
 Admin crea admin:
     AdminsScreen → createAdmin(dni, nombres, apellidos, password)
@@ -496,12 +507,15 @@ Admin crea admin:
 | `src/features/admin/screen/AdminPanelScreen.tsx` | Dashboard: métricas de hoy + accesos a módulos |
 | `src/features/admin/screen/ChoferesScreen.tsx` | Gestión de conductores (crear, editar, activar/desactivar) |
 | `src/features/admin/screen/BusesScreen.tsx` | CRUD de buses |
-| `src/features/admin/screen/AsignacionesScreen.tsx` | Asignaciones diarias |
+| `src/features/admin/screen/AsignacionesScreen.tsx` | Asignaciones por fecha (hoy/futuro) con uno o varios turnos |
 | `src/features/admin/screen/AdminsScreen.tsx` | Gestión de administradores |
-| `src/features/admin/utils/turno.ts` | Parseo/format de horarios de turno |
+| `src/features/admin/components/TurnosEditor.tsx` | Editor reutilizable de turnos |
+| `src/features/admin/utils/turno.ts` | Modelo, validación y formato de turnos |
+| `src/features/admin/utils/turnoDraft.ts` | Estado de edición de turnos |
 | `src/shared/config/env.ts` | Validación de variables `VITE_FIREBASE_*` |
 | `src/shared/config/firebase.ts` | Instancia de Firebase (Firebase JS SDK) |
 | `src/shared/utils/dni.ts` | Normalización y validación de DNI (8 dígitos) |
+| `src/shared/utils/date.ts` | Fechas de calendario America/Lima (hoy, validación, formato) |
 | `src/shared/utils/format.ts` | Formateo de fechas y nombres de admin |
 
 ### BurritoUserApp

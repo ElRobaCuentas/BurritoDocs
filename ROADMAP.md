@@ -27,6 +27,7 @@ dependencias funcionales.
 | UX-01 | Ciclo 3 estados en SendCoordinates (separar stopProcess de signOut), FloatingBackButton, FloatingBackButton en CRUDs | BurritoDriverApp |
 | UX-02 | Native-stack en AdminNavigator, gestureEnabled, headers eliminados | BurritoDriverApp |
 | UX-03 | Dependencias: react-native-vector-icons, native-stack | BurritoDriverApp |
+| I08 | Asignaciones para hoy/futuro con uno o varios turnos en AdminWeb; exclusividad conductor/fecha y compatibilidad legacy. Implementado; pendiente commit/deploy. | AdminWeb |
 
 ## 3. UX / UI Polishing — BurritoDriverApp
 

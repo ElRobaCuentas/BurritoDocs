@@ -1242,6 +1242,63 @@ SendCoordinates.tsx, ROADMAP.md (UX-01), HISTORIAL.md (D4), ADR-010.
 
 ---
 
+### ADR-027: Asignaciones con múltiples turnos informativos y un solo bus por conductor/fecha
+
+**Estado:** Aceptada.
+
+**Contexto:**
+
+El modelo original de `/asignaciones` representaba un conductor, un bus y,
+opcionalmente, un único par `horaInicio`/`horaFin`. La operación real puede
+requerir varios intervalos en la misma jornada (por ejemplo, mañana y tarde),
+pero la DriverApp solo necesita saber **qué bus** tiene asignado el conductor
+para la fecha; los horarios son información administrativa y no controlan el
+tracking. Además, cambiar de bus dentro de una misma asignación introduciría
+una relación N:N que la DriverApp actual no sabe interpretar.
+
+**Decisión:**
+
+1. Una asignación activa sigue siendo **una por conductor + fecha** y tiene
+   **un solo `busId`**.
+2. Se agrega `turnos: [{ inicio, fin }]` como fuente de verdad, con minutos
+   desde medianoche (0–1439).
+3. Se exige mínimo un turno; `inicio < fin`; mismo día calendario (sin cruzar
+   medianoche); sin solapamientos; orden cronológico. Consecutivos y separados
+   están permitidos.
+4. `horaInicio`/`horaFin` se conservan como espejo del primer turno para
+   compatibilidad con registros viejos. No hay migración masiva.
+5. Editar turnos actualiza el mismo `asignacionId`; no crea otra asignación.
+6. Los turnos no inician ni detienen el tracking ni modifican la autorización
+   del conductor. La DriverApp sigue leyendo solo `busId`/`fecha`/`activo`.
+7. El alta sigue validando exclusividad por conductor + fecha y **no** valida
+   que el bus esté libre. La protección de buses se aplica al eliminar un bus
+   con asignación activa o futura.
+
+**Alternativas consideradas:**
+
+- Crear un registro por turno: descartado; rompe la exclusividad y obliga a la
+  DriverApp a elegir entre varios registros.
+- Guardar horarios como strings `HH:MM`: descartado; el modelo existente usa
+  minutos numéricos y así se evitan conversiones y comparaciones frágiles.
+- Permitir un bus distinto por turno: descartado para esta fase; requiere un
+  modelo N:N y cambios en DriverApp.
+- Hacer que DriverApp use los turnos para iniciar/detener el tracking:
+  descartado; el control del recorrido sigue siendo manual (ADR-026).
+
+**Consecuencias:**
+
+- AdminWeb renderiza y edita varios turnos dentro de una sola tarjeta.
+- Las asignaciones antiguas se leen como un turno usando `horaInicio`/`horaFin`.
+- Las reglas RTDB actuales aceptan `turnos` porque no validan campos hijos.
+- Si en el futuro se requiere cambiar de bus durante la jornada, habrá que
+  diseñar otra fase con cambios en el modelo y en DriverApp.
+
+**Referencias:** ARCHITECTURE.md (sección AdminWeb), FIREBASE_SCHEMA.md
+(`/asignaciones`), AdminWeb/AGENTS.md (§6.5 y §6.14), HISTORIAL.md (I08),
+ADR-024, ADR-026.
+
+---
+
 ## Referencias
 
 | Documento | Relación |

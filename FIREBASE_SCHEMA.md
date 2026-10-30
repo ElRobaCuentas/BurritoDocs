@@ -29,8 +29,9 @@ zonas horarias.
 | JavaScript (DriverApp) | `Date.now()` |
 | UserApp (server-side) | `database.ServerValue.TIMESTAMP` |
 
-Las fechas de asignación (turno diario) se almacenan como string
-`YYYY-MM-DD` para permitir filtros client-side.
+Las fechas de asignación se almacenan como string `YYYY-MM-DD`
+(día calendario `America/Lima`) para permitir filtros client-side. AdminWeb
+solo permite seleccionar hoy o fechas futuras en la pantalla de asignaciones.
 
 ### Coordenadas
 
@@ -221,13 +222,14 @@ ADR-025). El mismo mecanismo usa `createAdmin()` con `{dni}@admin.com`.
 
 ### `/asignaciones/{pushId}`
 
-- **Propósito**: relación temporal entre un conductor y un bus para un
-  turno diario. Clave generada por `push()` de Firebase.
-- **Escritura**: `admin_service.createAsignacion()` (desde AdminWeb,
-  panel admin). Requiere administrador autenticado: si no existe sesión,
-  la operación falla sin escribir en RTDB. La DriverApp solo lee
-  `/asignaciones`; no escribe.
-- **Lectura**: `admin_service.subscribeToAsignacionesHoy()` (listener
+- **Propósito**: relación temporal entre un conductor y un bus para una
+  fecha, con uno o varios turnos informativos. Clave generada por `push()`
+  de Firebase.
+- **Escritura**: `admin_service.createAsignacion()` y
+  `admin_service.updateTurnos()` (desde AdminWeb, panel admin). Requiere
+  administrador autenticado: si no existe sesión, la operación falla sin
+  escribir en RTDB. La DriverApp solo lee `/asignaciones`; no escribe.
+- **Lectura**: `admin_service.subscribeToAsignacionesPorFecha()` (listener
   continuo) y DriverApp (consulta puntual con `orderByChild('choferId')`).
 - **Estructura**:
 
@@ -239,6 +241,10 @@ ADR-025). El mismo mecanismo usa `createAdmin()` con `{dni}@admin.com`.
       "busId": "ABC-123",
       "fecha": "2025-06-09",
       "activo": true,
+      "turnos": [
+        { "inicio": 420, "fin": 480 },
+        { "inicio": 1140, "fin": 1260 }
+      ],
       "horaInicio": 420,
       "horaFin": 480,
       "createdAt": 1776948195000,
@@ -252,24 +258,37 @@ ADR-025). El mismo mecanismo usa `createAdmin()` con `{dni}@admin.com`.
 |-------|------|-------------|
 | `choferId` | string | DNI del conductor (coincide con clave en `/choferes`) |
 | `busId` | string | Placa del bus (coincide con clave en `/buses`) |
-| `fecha` | string | Fecha del turno en formato `YYYY-MM-DD`, calculada con `getTodayDateString()` (TZ local del navegador). El panel solo crea asignaciones para el día de hoy |
-| `activo` | boolean | `true` mientras el turno está vigente |
-| `horaInicio` | number | **Opcional**. Hora de inicio como minutos desde medianoche (0–1439). Se omite si el admin no la ingresa |
-| `horaFin` | number | **Opcional**. Hora de fin en el mismo formato que `horaInicio` |
+| `fecha` | string | Fecha de la asignación en `YYYY-MM-DD`, día calendario `America/Lima`. El alta rechaza fechas pasadas; la pantalla permite seleccionar hoy o fechas futuras |
+| `activo` | boolean | `true` mientras la asignación está vigente |
+| `turnos` | array de objetos | **Fuente de verdad**. Lista ordenada de intervalos `{ inicio, fin }` en minutos desde medianoche (0–1439). Mínimo uno; `inicio < fin`; sin cruzar medianoche; sin solapamientos; consecutivos/separados permitidos. Opcional solo en registros viejos |
+| `horaInicio` | number | **Legacy/compatibilidad**. Minutos desde medianoche (0–1439) del primer turno. Espejo de `turnos[0].inicio`; las pantallas nuevas usan `turnos` |
+| `horaFin` | number | **Legacy/compatibilidad**. Minutos del fin del primer turno; espejo de `turnos[0].fin` |
 | `createdAt` | number | Unix timestamp en milisegundos del momento de creación (`Date.now()`). Formato legible solo en la UI (`toLocaleString('es-PE', { timeZone: 'America/Lima' })`) |
 | `createdBy` | string | UID de Firebase Auth del administrador que creó la asignación. Coincide con una clave de `/administradores`. Es auditoría, no seguridad: la autorización real sigue siendo `auth.uid` en `/administradores` vía reglas RTDB |
 
 **Validación de exclusividad**: al crear una asignación, el servicio
-verifica que el **conductor** no tenga otra asignación activa para hoy.
-La validación del bus (`hasActiveBusAssignment`) existe en el servicio
-pero **no está conectada** al flujo de creación.
+verifica que el **conductor** no tenga otra asignación activa para la misma
+`fecha` (hoy o futura). No valida que el bus esté libre; varios conductores
+pueden compartir un bus. `hasActiveOrFutureBusAssignment` se usa solo para
+bloquear la eliminación de un bus con asignación activa o futura.
+
+**Turnos**: `turnos` es la fuente de verdad. `horaInicio`/`horaFin` se
+mantienen como espejo del primer turno por compatibilidad; editar turnos
+actualiza ambos. Los turnos son datos administrativos: no inician ni
+detienen el tracking de la DriverApp.
 
 **Cancelación**: al cancelar, se establece `activo: false`. El registro
 no se elimina.
 
-**Nota**: asignaciones creadas antes de esta mejora no tienen
-`createdAt` ni `createdBy`; ambos campos son opcionales y las pantallas
-los renderizan condicionalmente.
+**Nota**: las asignaciones anteriores al soporte multi-turno pueden carecer
+de `turnos`; `getTurnos()` usa `horaInicio`/`horaFin` como un único turno
+cuando ambos forman un intervalo válido. Los registros anteriores a la
+auditoría mínima también pueden carecer de `createdAt`/`createdBy`, que se
+renderizan condicionalmente. No se hace migración masiva.
+
+**Reglas**: `/asignaciones` no valida campos hijos; `turnos` es aceptado
+por las reglas actuales (lectura autenticada, escritura admin). El índice
+`.indexOn` sigue siendo `choferId`.
 
 ### `/administradores/{auth.uid}` (nuevo)
 
