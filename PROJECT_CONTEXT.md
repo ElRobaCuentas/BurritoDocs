@@ -124,7 +124,8 @@ de administración (conductores, buses, asignaciones).
 ## 5. Limitaciones Actuales
 
 - **Ciclo de vida GPS (I07, 01/11/2026)**: corregido funcionalmente y
-  validado; pendiente integración Git. H1 A/B y la regresión reportada de
+  validado e integrado/publicado en `Driver/main` (`9faaaf9`); documentación
+  técnica integrada/publicada mediante `docs/main` (`d5c4d48`). H1 A/B y la regresión de
   64/64 tests respaldan cierre local offline, ausencia de reinicio voluntario
   indebido y nuevo inicio antes del ACK de parada anterior; no se requiere H2
   adicional. La confirmación remota no gobierna el cierre local y pueden

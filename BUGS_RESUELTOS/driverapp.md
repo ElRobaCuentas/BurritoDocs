@@ -540,7 +540,10 @@ Sin cambios de producción durante el cierre; según la auditoría reportada,
 firebase_service.ts, dependencias y Android permanecen idénticos a main.
 
 Estado:
-Corregido funcionalmente y validado; pendiente integración Git (01/11/2026).
+Corregido funcionalmente, validado e integrado/publicado (01/11/2026).
+Driver: `9faaaf9`; documentación técnica: `d5c4d48`. Integraciones fast-forward
+y publicación de ambos commits verificadas en sus respectivos `main` remotos.
+Las ramas `fix/i07-ciclo-vida-gps` se conservan.
 - H1 A aprobado: parada local offline 19:23:52, confirmación 19:26:41 (169 s),
   sin rearranque hasta INICIAR manual 19:28:24 (~272 s); parada final
   19:29:31 e isActive=false.
