@@ -619,19 +619,21 @@ Estado inicial: app cerrada, sin sesión
     hacia la UI antes de escribir
     ↓
 13b. Watchdog (C3): intervalo 10s, timeout 30s sin pulso
-    ├── Pulso presente: no hace nada
-    └── Sin pulso: restartBackgroundJob()
-         ├── BackgroundJob.stop() (try/catch) + BackgroundJob.start()
-         ├── Éxito: log "🔄 SERVICIO REINICIADO"
-         └── Falla: isSending=false + Alert + banner persistente
-    ↓
+     ├── Pulso presente: no hace nada
+     └── Sin pulso e intención vigente, sin transición en curso: restartBackgroundJob()
+          ├── Limpieza propia + BackgroundJob.stop() + inicio si la generación sigue vigente
+          ├── Éxito: log "🔄 SERVICIO REINICIADO"
+          └── Falla: isSending=false + Alert + banner persistente
+     ↓
 14. [Usuario presiona DETENER RECORRIDO]
-    ↓
-15. BackgroundJob.stop()
-    ↓
-16. stopBusService(busId) → /ubicacion_buses/{busId}/isActive = false
-    ↓
-17. (UI) vuelve a estado idle; el conductor puede reanudar el recorrido
+     ↓
+15. Invalida intención/generación antes del primer await; limpia watch, heartbeat y keepAlive
+     ↓
+16. BackgroundJob.stop() serializado con las demás transiciones nativas
+    ├── Falla: parada local no confirmada; INICIAR bloqueado, DETENER permite reintento
+    └── Éxito: solicita stopBusService(busId) → isActive = false, sin esperar ACK remoto
+     ↓
+17. (UI) Detenido e INICIAR disponible tras cierre local; el ACK remoto solo informa diagnóstico
 
 Cerrar sesión (acción independiente, ADR-026):
 18. auth().signOut() → onAuthStateChanged → renderiza LoginDriverScreen
@@ -649,37 +651,46 @@ Cerrar sesión (acción independiente, ADR-026):
   `InvalidForegroundServiceTypeException` en runtime.
 - **Watchdog (C3)**: `isRunning()` de la librería no detecta la muerte
   nativa del servicio (flag JS que solo cambia con `stop()` explícito).
-  Por eso el watchdog usa pulsos reales de GPS. `BackgroundJob.start()`
-  es idempotente (nativo: `stopService` + `startForegroundService`), lo
-  que hace seguro el ciclo stop/start del reinicio. Un FGS no puede
-  iniciarse desde background (Android 14 lanza
-  `ForegroundServiceStartNotAllowedException`); en ese escenario el
-  reinicio falla y se avisa al conductor.
-- **Cierre idempotente (C4.2)**: `stopProcess` protege el apagado del
-  tracking ante doble pulsación, reinicio del watchdog o servicio ya
-  detenido. `isStoppingRef` impide ejecuciones en paralelo; el cuerpo
-  envuelve `BackgroundJob.stop()` en try/catch y verifica el resultado
-  de `stopBusService`; el `finally` garantiza `setIsSending(false)` y
-  libera el guard. `DETENER RECORRIDO` sigue siendo la única fuente de
-  verdad para `isActive: false`.
-- **Restauración del estado al re-montar (C4.7)**: al cerrar la app desde
-  recientes con el tracking activo, el servicio nativo sigue vivo
-  (`stopWithTask="false"`, mismo proceso), por lo que al re-montar
-  `SendCoordinates`, `BackgroundJob.isRunning()` es `true` (el singleton JS
-  sobrevivió). En el `useEffect` de montaje, si es `true` se restaura
-  `isSending=true`, se reinicia `lastPulseRef`, se limpia `recoveryFailed` y se
-  loguea "Recorrido restaurado", para que la UI muestre "Compartiendo
-  ubicación" + DETENER RECORRIDO. `isActive` de Firebase sigue sin ser fuente
-  de verdad: el conductor recupera el control del servicio real.
+  El watchdog usa `PRO_LOCATION_PULSE` del GPS y del heartbeat, no ACK de
+  Firebase. I07 exige intención/generación vigente y excluye inicio,
+  recuperación y parada en curso. Las llamadas nativas se serializan sin
+  incluir esperas de red; tras permisos y transiciones se vuelve a validar
+  la generación. Un inicio desde background puede ser rechazado por Android
+  14 (`ForegroundServiceStartNotAllowedException`); se avisa al conductor.
+- **Cierre idempotente (C4.2, actualizado por I07)**: `trackingIntent`
+  comparte intención, generación y transiciones entre montajes. DETENER
+  invalida antes del primer `await`; cada ejecución tiene identidad propia
+  y `dispose` idempotente para su watch, heartbeat y keepAlive. Las guardas
+  de callbacks y continuaciones impiden que una ejecución cancelada vuelva
+  a publicar o altere a su sucesora. Un fallo de `stop()` no es éxito:
+  conserva el error, bloquea INICIAR y permite reintentar DETENER.
+  Tras éxito nativo, la solicitud remota se emite antes de liberar INICIAR,
+  sin esperar confirmación. Sus ACK antiguos solo informan diagnóstico
+  como operación anterior; no reescriben ni cambian el estado local.
+- **Restauración del estado al re-montar (C4.7, actualizado por I07)**:
+  `SendCoordinates` toma el estado compartido y escucha `PRO_TRACKING_STATE`
+  para recibir también el resultado de operaciones iniciadas antes del
+  remontaje, sin retener setters de la pantalla anterior. No basta con
+  `isRunning()` para restaurar: se exige intención vigente y envío activo,
+  sin inicio/recuperación en curso. Una parada cancelada no revive al volver;
+  un recorrido legítimo se restaura sin crear otro motor. El desmontaje no
+  detiene por sí mismo el servicio y `isActive` remoto no gobierna la UI.
+- **Límite HeadlessJS (I07)**: la promesa de usuario de `locationTask` queda
+  pendiente al limpiar para evitar el `stop()` global automático del wrapper
+  al resolverla. Esto no equivale a cerrar una envoltura HeadlessJS. En la
+  biblioteca 4.1.0, entregas tardías pueden sobrescribir el resolver global
+  y dejar envolturas pendientes; los tests caracterizan ese residual, no un
+  defecto del planificador Android reproducido ni dos motores GPS completos
+  simultáneos. Ver `BUGS_RESUELTOS/driverapp.md` (CASO 020).
 - **Doze Mode**: el foreground service evita que el SO suspenda el hilo
   de GPS cuando la pantalla se apaga. Sin este servicio,
   `watchPosition` se detiene al minimizar la app.
 - **Persistencia desactivada**: `database().setPersistenceEnabled(true)`
-  fue eliminado explícitamente. Si estuviera activo, Firebase acumularía
-  ubicaciones durante pérdidas de señal y las reenviaría en ráfaga al
-  reconectar, causando que el bus "viaje en el tiempo" en el mapa.
-  Sin persistencia, cada envío fallido se descarta y el siguiente pulso
-  (3s después) refleja la posición real.
+  fue eliminado explícitamente (ADR-003). Desactivar persistencia en disco
+  no elimina las escrituras pendientes en memoria del SDK durante una
+  desconexión. Pueden confirmarse al reconectar; no se garantiza que cada
+  intento offline se descarte. I07 no agrega cola propia ni cancela
+  escrituras ya solicitadas: separa su confirmación del cierre local.
 - **Haversine / geofencing**: la función `calculateDistance()` existe
   en `Map.tsx` pero la arquitectura actual **no incorpora geofencing**.
   No hay cierre automático de vueltas ni escritura a `/recorridos`.

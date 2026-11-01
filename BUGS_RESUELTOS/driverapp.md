@@ -505,6 +505,85 @@ no postergar el reintento.
 
 ---
 
+## CASO 020 — DETENER offline permitía reinicio del watchdog y desincronización de UI (I07)
+
+Síntoma:
+El 31/10/2026, con AHK-459, DETENER offline a las 16:29:24 apagó el servicio,
+pero el watchdog lo reinició indebidamente a las 16:30:01. Al completar la
+parada remota a las 16:31:21, la UI mostró Detenido con el servicio activo.
+
+Causa Raíz:
+El cierre local esperaba Firebase; el watchdog no respetaba la parada
+voluntaria y la finalización antigua podía sobrescribir el estado nuevo.
+D1, D2 y D4 quedaron confirmados físicamente. D3 (recuperación en vuelo sin
+invalidación) era un riesgo de código, no una variante física aislada. D5
+(limpieza diferida) se verificó como mecanismo, sin demostrar dos motores
+GPS completos simultáneos en Android.
+
+Solución (tarea I07):
+- Intención/generación compartida entre montajes e identidad por ejecución;
+  DETENER invalida antes del primer await y las continuaciones/callbacks
+  comprueban vigencia. El watchdog no reinicia un recorrido cancelado.
+- `dispose` idempotente libera watch, heartbeat y keepAlive propios; las
+  transiciones nativas se serializan sin esperar red.
+- Tras éxito nativo, se solicita la parada remota antes de liberar INICIAR,
+  sin esperar ACK. Las respuestas antiguas solo diagnostican la operación;
+  no modifican UI ni vuelven a escribir. Orden de solicitudes: A:true →
+  A:false → B:true; no equivale a ordenar todos los ACK del SDK.
+- Si falla el stop nativo no se declara éxito: INICIAR queda bloqueado y
+  DETENER permite reintento. `PRO_TRACKING_STATE` sincroniza el estado y los
+  resultados pendientes con la pantalla remontada.
+
+Archivos:
+Driver/src/screen/SendCoordinates.tsx y cinco suites de Driver/__tests__.
+Sin cambios de producción durante el cierre; según la auditoría reportada,
+firebase_service.ts, dependencias y Android permanecen idénticos a main.
+
+Estado:
+Corregido funcionalmente y validado; pendiente integración Git (01/11/2026).
+- H1 A aprobado: parada local offline 19:23:52, confirmación 19:26:41 (169 s),
+  sin rearranque hasta INICIAR manual 19:28:24 (~272 s); parada final
+  19:29:31 e isActive=false.
+- H1 B aprobado: A online 21:00:18, DETENER A offline 21:03:32, INICIAR B
+  offline 21:05:36 antes del ACK A. Confirmación A 21:12:41 identificada
+  como operación anterior, sin afectar B; true y timestamps actuales hasta
+  DETENER B 21:14:17, después false estable. REST cada ~3 s no observó un
+  false transitorio de A: no se afirma que se haya visto.
+- Ambos bloques cerraron sin servicio ni solicitudes GPS Driver y con false.
+  No se requiere H2 adicional: B cubrió el inicio offline antes del ACK;
+  A aportó ciclos/retornos y los tests cubren integración/remontajes, sin
+  fallo nuevo. No se forzaron físicamente fallos nativos ni recuperación en
+  vuelo; esa cobertura es automática y no valida una jornada de 8 horas.
+- Regresión de cierre reportada: Jest 64/64, cinco suites, 26.59 s;
+  `tsc --noEmit`, ESLint de los cinco tests y `git diff --check`: exit 0.
+  `npm run lint` global falla por el único error preexistente
+  `SendCoordinates.tsx:277:12`, `asignacionId` unused
+  (`@typescript-eslint/no-unused-vars`); no se corrigió ni se oculta.
+- Comando Jest usado, sin cambiar jest.config.js:
+  `npm test -- --runInBand --transformIgnorePatterns 'node_modules/(?!((jest-)?react-native|@react-native(-community)?|react-native-background-actions)/)' --json --outputFile=<temporal>`.
+  Resultado externo: `i07_close_jest_20261101.json`. Auditoría externa
+  `i07_close_apk_audit.json`: ocho archivos propios (index.js y src) coinciden
+  con sourcesContent del sourcemap conservado y el hash del bundle compilado
+  coincide con el del APK. SHA-256 del APK aprobado:
+  `3aead0a9855b6df5b146c5701bca9af542635297ea79a42cc8d45597fbcaece4`.
+
+Lección:
+Parada local, solicitud remota y confirmación son hechos distintos. Un ACK
+tardío o un heartbeat con timestamp nuevo no prueba nueva adquisición GPS.
+La promesa de usuario pendiente evita el stop automático del wrapper al
+resolverla, pero no garantiza cierre HeadlessJS. Los tests con wrapper real
+4.1.0 y entrega controlada caracterizan el resolver global sobrescrito y
+envolturas tardías pendientes; no reproducen un defecto del planificador
+Android ni eliminan ese residual de la biblioteca. Los casos 012/013/019
+conservan su diagnóstico histórico; el ciclo vigente está en ARCHITECTURE.md §8.
+
+Referencias:
+- `C:/Users/matia/AppData/Local/Temp/opencode/i07_20261031_161839/INFORME_I07.md` (incidente previo a la corrección).
+- `C:/Users/matia/AppData/Local/Temp/opencode/h1_A_20261031_190246/INFORME_H1_BLOQUE_A.md` (aprobación parcial; sus pendientes se resuelven con B).
+- `C:/Users/matia/AppData/Local/Temp/opencode/h1_B_20261031_204257/INFORME_H1_BLOQUE_B.md` (veredicto físico final).
+
+---
+
 ## Hallazgos de auditoría pendientes (sin corrección)
 
 Hallazgos detectados durante la validación de C4.2. Se registran por separado

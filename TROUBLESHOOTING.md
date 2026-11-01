@@ -166,6 +166,16 @@ Cada caso documenta: **síntoma**, **causa**, **diagnóstico**,
 
 ## 6. Foreground Service y Android
 
+### DETENER offline, reinicio indebido o confirmación de una operación anterior (I07)
+
+| Campo | Descripción |
+|-------|-------------|
+| Síntoma | Antes de I07, DETENER offline podía dejar el cierre esperando Firebase, permitir reinicio del watchdog y mostrar Detenido con servicio activo al llegar la confirmación antigua |
+| Causa | Cierre local acoplado al ACK remoto, sin invalidación compartida de intención/generación ni aislamiento suficiente de operaciones antiguas |
+| Diagnóstico | Distinguir PARADA LOCAL COMPLETADA de PARADA REMOTA PENDIENTE/CONFIRMADA/FALLIDA; contrastar UI con servicio y registro GPS nativos. Un ACK antiguo o timestamp de heartbeat nuevo no demuestra nueva adquisición GPS ni dos motores simultáneos |
+| Solución | Corregido funcionalmente y validado por I07; pendiente integración Git. DETENER invalida y limpia recursos propios, espera stop nativo serializado y solicita false antes de liberar INICIAR, sin esperar ACK. Una respuesta anterior solo informa diagnóstico. Si aparece PARADA LOCAL NO CONFIRMADA, no es éxito: INICIAR queda bloqueado y se reintenta DETENER |
+| Prevención | Conservar guardas de vigencia, limpieza idempotente y sincronización de remontaje por PRO_TRACKING_STATE. Sin persistencia en disco todavía puede haber pendientes SDK en memoria; no asumir descarte offline ni cierre HeadlessJS por una promesa JS pendiente. Evidencia y residual del wrapper 4.1.0: BUGS_RESUELTOS/driverapp.md (CASO 020) |
+
 ### InvalidForegroundServiceTypeException (Android 14+)
 
 | Campo | Descripción |
@@ -302,7 +312,7 @@ actual del proyecto, planificadas en fases futuras del roadmap.
 | La UserApp muestra un solo bus (multi-bus no implementado) | Planificado (Fase 1) |
 | No hay geofencing ni cierre automático de vueltas | Planificado (Fase 2) |
 | iOS no soportado para DriverApp | Limitación de plataforma |
-| Test unitario de DriverApp (`__tests__/App.test.tsx`) está roto (hereda de archivo `../App` inexistente) | Por resolver |
+| Regresión de DriverApp al cierre I07 | Reportada el 01/11/2026: 64/64 tests, cinco suites; el wrapper real requiere el flag transformIgnorePatterns documentado en CASO 020, sin cambiar jest.config.js. Lint global falla por asignacionId unused preexistente en SendCoordinates.tsx:277:12; TSC y ESLint de los cinco tests: exit 0. |
 | Exposición histórica de la contraseña de firma de release | La contraseña quedó expuesta en el historial de Git. El keystore de release no se encontró en el historial auditado y no hay evidencia identificada de uso indebido. La configuración de firma actual se conserva. No se ha decidido rotar la clave; la decisión se reevaluará si aparecen evidencias de compromiso o cambian las condiciones de riesgo. |
 | Corte de red **durante** la sesión: Firebase no dispara `onError`; en DriverApp la recuperación depende del heartbeat T4.1 (catch-reset) y en UserApp el bus caducado se oculta por expiración de timestamp (estrategia C) | Atenuado por C4.6+T4.1 (22/08); escenario obligatorio del checklist de T1 |
 | El icono/marca del menú lateral usa el placeholder por defecto de react-navigation; el logo oficial solo llega al splash y al launcher | Por resolver (rebranding incompleto) |

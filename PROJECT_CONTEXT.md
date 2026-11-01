@@ -123,6 +123,18 @@ de administración (conductores, buses, asignaciones).
 
 ## 5. Limitaciones Actuales
 
+- **Ciclo de vida GPS (I07, 01/11/2026)**: corregido funcionalmente y
+  validado; pendiente integración Git. H1 A/B y la regresión reportada de
+  64/64 tests respaldan cierre local offline, ausencia de reinicio voluntario
+  indebido y nuevo inicio antes del ACK de parada anterior; no se requiere H2
+  adicional. La confirmación remota no gobierna el cierre local y pueden
+  quedar escrituras SDK pendientes en memoria aun sin persistencia en disco.
+  D3 se cubre con pruebas deterministas, no con recuperación en vuelo aislada
+  físicamente; tampoco se forzaron fallos nativos. El wrapper 4.1.0 conserva
+  el residual de resolver global sobrescrito por entregas HeadlessJS tardías:
+  promesa JS pendiente no equivale a cierre HeadlessJS, ni prueba dos motores
+  GPS completos simultáneos en Android. No se extrapola a una jornada de 8 h.
+  Ver `BUGS_RESUELTOS/driverapp.md` (CASO 020) y `ARCHITECTURE.md` §8.
 - **Precisión GPS**: el campus de la UNMSM produce interferencia
   estructural (efecto multipath) con márgenes de error de ±10–15 metros.
 - **Dependencia de red móvil**: la sincronización en tiempo real requiere

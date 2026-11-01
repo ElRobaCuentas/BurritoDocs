@@ -1228,6 +1228,27 @@ recorrido y mezclaba dos responsabilidades distintas.
   no cambia el estado del bus por sí mismo.
 - La etiqueta de la acción de detención ya no implica un logout.
 
+**Actualización de implementación (I07, 01/11/2026):**
+
+El cierre local ya no espera confirmación Firebase. DETENER invalida la
+intención/generación compartida antes del primer await, libera los recursos
+de su ejecución y serializa el stop nativo con los inicios/recuperaciones.
+Solo tras éxito nativo solicita `isActive:false`, antes de liberar INICIAR y
+sin esperar ACK. Una respuesta anterior solo aporta diagnóstico; no altera
+el recorrido nuevo. Un stop nativo fallido no se presenta como Detenido:
+INICIAR permanece bloqueado y DETENER permite reintento. El estado compartido
+se sincroniza al remontar mediante `PRO_TRACKING_STATE`.
+
+Esto conserva la separación manual de este ADR y los turnos informativos de
+ADR-027, sin cambiar rutas, payloads, dependencias ni configuración Android.
+La persistencia en disco continúa desactivada (ADR-003), pero ello no implica
+descartar todas las escrituras offline: el SDK conserva pendientes en memoria.
+La promesa de usuario pendiente tras limpiar evita el stop automático del
+wrapper al resolverla, no acredita cierre HeadlessJS. La biblioteca 4.1.0
+conserva el residual de resolver global sobrescrito por entregas tardías,
+caracterizado en tests controlados, no como defecto Android reproducido.
+Validación y límites: `BUGS_RESUELTOS/driverapp.md` (CASO 020).
+
 **Limitación conocida (verificada en código, no es tarea):**
 
 Ninguna terminación anómala escribe `isActive:false`: el reinicio fallido del
