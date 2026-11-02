@@ -116,6 +116,10 @@ de administración (conductores, buses, asignaciones).
   `.info/connected`, INICIAR puede usar un respaldo en memoria del mismo
   conductor/día. La etiqueta «Servicio de ubicación activo» describe el
   servicio Android local (ADR-028).
+- **Privacidad del diagnóstico (I11)**: el panel del conductor ya no imprime
+  nombre, DNI ni prefijo del DNI. Crashlytics recibe el UID con sesión y
+  `setUserId('')` cuando Auth informa usuario nulo. Los diagnósticos
+  operativos y los errores con stack trace se conservan.
 
 ### Funcionalidades pendientes (ver MVP.md y ROADMAP.md)
 
@@ -153,6 +157,11 @@ de administración (conductores, buses, asignaciones).
   el recorrido se cubre con Jest. El APK validado es anterior al cambio de
   etiqueta «Servicio de ubicación activo»; no se generó otro. Ver
   `BUGS_RESUELTOS/driverapp.md` (CASO 021) y ADR-028.
+- **Identidad de Crashlytics (I11, 02/11/2026)**: las pruebas verifican las
+  solicitudes al SDK, no la aplicación nativa del UID ni la recepción de
+  reportes. La limpieza no elimina reportes históricos ni sanitiza objetos de
+  error. No hay una cola que garantice el orden nativo de `setUserId`. Ver
+  `BUGS_RESUELTOS/driverapp.md` (CASO 022) y ADR-029.
 - **Precisión GPS**: el campus de la UNMSM produce interferencia
   estructural (efecto multipath) con márgenes de error de ±10–15 metros.
 - **Dependencia de red móvil**: la sincronización en tiempo real requiere

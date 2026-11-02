@@ -671,6 +671,83 @@ Referencias:
 
 ---
 
+## CASO 022 — Nombre y DNI en el panel de diagnóstico y UID de Crashlytics sin limpiar (I11)
+
+Síntoma:
+El panel técnico de la DriverApp mostraba el nombre y apellidos del conductor
+al identificarlo, el DNI completo cuando no había registro en `/choferes` y un
+prefijo del DNI al iniciar el motor. Además, `DriverApp.tsx` configuraba
+`crashlytics().setUserId(uid)` al autenticarse, pero no solicitaba limpieza al
+cerrar sesión ni al arrancar sin usuario.
+
+Causa Raíz:
+Los tres mensajes interpolaban datos personales que no aportaban diagnóstico
+operativo. La llamada de Crashlytics solo cubría la rama con usuario; la rama
+nula actualizaba la UI, pero no el identificador del SDK.
+
+Solución (tarea I11):
+- `Motor iniciado`, `Conductor identificado` y `Perfil del conductor no
+  disponible` reemplazan los tres mensajes personales. Se conservan el nivel
+  del log y el registro del problema.
+- `uidChofer` dejó de desestructurarse en `locationTask` porque ya no se
+  imprimía; el payload del servicio y la identidad del recorrido no cambiaron.
+- `syncCrashlyticsUser()` solicita `setUserId(uid)` con usuario autenticado y
+  `setUserId('')` con usuario nulo, incluido el arranque sin sesión. La
+  navegación no espera la promesa y los fallos síncronos o asíncronos del SDK
+  quedan contenidos localmente.
+- Se conservaron los diagnósticos de GPS, heartbeat, Firebase, bus,
+  asignaciones, permisos, watchdog, parada local/remota y los objetos de error
+  con sus stack traces. No se agregó sanitización general ni una cola de
+  reintentos.
+
+Archivos:
+`Driver/src/screen/SendCoordinates.tsx`, `Driver/src/DriverApp.tsx`,
+`Driver/__tests__/SendCoordinates.privacy.test.tsx` (5 pruebas) y
+`Driver/__tests__/DriverApp.crashlytics.test.tsx` (5 pruebas).
+
+Estado:
+Implementado, probado, integrado y publicado (02/11/2026).
+Driver: `4a05e41`; integración fast-forward en `Driver/main` y publicación
+verificada. La rama `fix/i11-limpieza-logs` se conserva.
+
+Verificación:
+- 10/10 pruebas nuevas aprobadas.
+- Regresión completa: 120/120 en 9 suites. Incluye las 110 pruebas previas, de
+  las cuales 13 pertenecen a la suite no versionada del punto 2.5
+  (`__tests__/SendCoordinates.logout.test.tsx`), conservada intacta y fuera del
+  commit de I11. Cobertura propia de I11: 107 pruebas versionadas (97 previas
+  más 10 nuevas).
+- `tsc --noEmit`, ESLint de los archivos de I11 y `git diff --check`:
+  correctos. Se conserva el único error preexistente `asignacionId` unused en
+  `SendCoordinates.tsx`.
+- Revisión visual reportada por el usuario en emulador debug conectado a
+  Metro: el panel mostró «Motor iniciado» sin DNI. No se iniciaron recorridos
+  ni se publicaron coordenadas durante el cierre.
+
+Limitaciones:
+- Las pruebas verifican las solicitudes de `setUserId` y el comportamiento
+  observable de la app, no la aplicación nativa del UID ni la recepción
+  efectiva de reportes en Crashlytics.
+- La limpieza no elimina reportes históricos.
+- Los objetos de error y sus stack traces no se sanitizaron: podrían contener
+  datos sensibles según su origen y requieren evaluación separada.
+- No se añadió una cola que garantice el orden de finalización nativa de
+  `setUserId`; solo se verificó el orden de solicitudes.
+
+Lección:
+Un dato útil para el negocio no es automáticamente útil para el diagnóstico.
+La identidad interna debe conservarse para operar, pero el panel y la
+telemetría deben exponer solo lo necesario. Limpiar un identificador de
+Crashlytics es una acción de alcance futuro: no reescribe reportes pasados.
+
+Referencias:
+- `ARCHITECTURE.md` (§7, servicios externos)
+- `DECISIONS.md` (ADR-029)
+- `PROJECT_CONTEXT.md` (§4 y §5)
+- `Driver/__tests__/SendCoordinates.logout.test.tsx` (punto 2.5, no forma parte de I11)
+
+---
+
 ## Hallazgos de auditoría pendientes (sin corrección)
 
 Hallazgos detectados durante la validación de C4.2. Se registran por separado

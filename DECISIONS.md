@@ -1388,6 +1388,66 @@ BUGS_RESUELTOS/driverapp.md (CASO 021), ADR-003, ADR-026, ADR-027.
 
 ---
 
+### ADR-029: Minimización de datos personales en diagnóstico y limpieza del UID de Crashlytics
+
+**Estado:** Aceptada.
+
+**Contexto:**
+
+El panel técnico de la DriverApp mostraba el nombre del conductor, su DNI
+completo cuando faltaba el perfil y un prefijo del DNI al iniciar el motor.
+Esos datos no aportaban diagnóstico operativo y quedaban visibles en pantalla.
+Además, Crashlytics recibía el UID al autenticarse, pero conservaba el último
+identificador cuando Firebase Authentication informaba usuario nulo, incluso
+en un equipo compartido. Los objetos de error y los stack traces sí tienen
+valor para diagnosticar fallos del MVP y no debían eliminarse en bloque.
+
+**Decisión:**
+
+1. Retirar nombre, DNI y prefijo del DNI de los tres mensajes del panel; usar
+   textos sin datos personales y conservar el nivel del registro.
+2. Mantener la identidad interna del recorrido: `uidChofer` sigue viajando en
+   las opciones del servicio aunque `locationTask` ya no lo imprima.
+3. Solicitar `setUserId(uid)` cuando Auth entrega un usuario y
+   `setUserId('')` cuando entrega `null`, incluido el arranque sin sesión.
+4. No bloquear la navegación ni el estado autenticado por la actualización de
+   Crashlytics; contener localmente sus fallos síncronos y asíncronos.
+5. Conservar los diagnósticos operativos y los objetos de error con sus stack
+   traces. No introducir sanitización general en esta fase.
+6. No agregar reintentos, persistencia ni una cola de sincronización de
+   `setUserId` para el MVP.
+
+**Alternativas consideradas:**
+
+- Eliminar el panel de diagnóstico: descartado; GPS, asignaciones, heartbeat y
+  parada lo necesitan para el piloto.
+- Mostrar un hash o un prefijo del DNI como identificador técnico: descartado;
+  sigue vinculado a una persona y no aporta diagnóstico.
+- Sanitizar todos los errores antes de registrarlos: descartado por ahora;
+  eliminaría contexto útil sin evidencia de filtración concreta.
+- Bloquear la navegación hasta confirmar `setUserId`: descartado; acoplaría la
+  autenticación a un SDK auxiliar.
+- Encolar las actualizaciones de `setUserId`: descartado para el MVP; el orden
+  de solicitudes sigue el orden de los eventos de Auth y no se detectó una
+  carrera que lo justifique.
+
+**Consecuencias:**
+
+- El panel y la telemetría reducen la exposición de datos personales sin
+  cambiar el tracking ni la identidad interna del recorrido.
+- La limpieza de Crashlytics no elimina reportes históricos y no garantiza por
+  sí sola que el SDK nativo la aplique ni que los reportes se reciban.
+- Los errores conservados podrían contener datos sensibles según su origen;
+  requieren una evaluación separada.
+- El orden de finalización nativa de `setUserId` no está garantizado; las
+  pruebas solo cubren el orden de solicitudes y el comportamiento observable.
+
+**Referencias:** ARCHITECTURE.md (§7, servicios externos),
+BUGS_RESUELTOS/driverapp.md (CASO 022), PROJECT_CONTEXT.md (§4 y §5),
+ADR-026, Driver commit `4a05e41`.
+
+---
+
 ## Referencias
 
 | Documento | Relación |

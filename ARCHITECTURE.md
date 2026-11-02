@@ -542,12 +542,19 @@ Admin crea admin:
 | Firebase Auth | Login de conductor (App móvil). *AdminWeb:* login de admin y creación de cuentas con app temporal | Login email/password + Google Sign-In |
 | Firebase RTDB | `/ubicacion_buses/{busId}` (write), `/asignaciones` (read) | `/ubicacion_buses`, `/usuarios`, `/comentarios` |
 | Firebase Analytics | No | Eventos de usuario (mapa abierto, mapa centrado) |
-| Firebase Crashlytics | Sí (`setUserId` con el uid del conductor) | Configurado en firebase.json |
+| Firebase Crashlytics | Sí (`setUserId` con el uid; `setUserId('')` sin sesión) | Configurado en firebase.json |
 | ServerValue.TIMESTAMP | No | Sí (6 ocurrencias: ultimaConexion, feedback) |
 
 > **AdminWeb** usa Firebase Auth (login de admin + creación de
 > cuentas vía app temporal) y RTDB (gestión de `/choferes`, `/buses`,
 > `/asignaciones`, `/choferes_uids` y `/administradores`).
+
+> **Identidad y diagnóstico (I11):** `DriverApp.tsx` solicita
+> `setUserId(uid)` cuando Firebase Auth entrega un usuario y
+> `setUserId('')` cuando entrega `null`, incluido el arranque sin sesión.
+> La limpieza no elimina reportes históricos. El panel deja de imprimir
+> nombre, DNI y prefijo del DNI; conserva GPS, heartbeat, Firebase, bus,
+> asignaciones, permisos, watchdog, parada y errores con stack trace.
 
 ### Mapbox
 
