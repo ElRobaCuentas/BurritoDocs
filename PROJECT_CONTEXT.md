@@ -109,6 +109,13 @@ de administración (conductores, buses, asignaciones).
   (la escritura exige ser un administrador ya existente).
 - **Bug de inicialización asíncrona**: corregido. `initializeApp()` del
   SDK ahora se invoca con `await`.
+- **Validación diaria de asignación en DriverApp (I08)**: al montar y al
+  presionar INICIAR se consulta `/asignaciones` por `choferId` con la fecha
+  `America/Lima`; una respuesta válida fija el bus del recorrido y una
+  conocida como inválida lo bloquea. Con desconexión confirmada por
+  `.info/connected`, INICIAR puede usar un respaldo en memoria del mismo
+  conductor/día. La etiqueta «Servicio de ubicación activo» describe el
+  servicio Android local (ADR-028).
 
 ### Funcionalidades pendientes (ver MVP.md y ROADMAP.md)
 
@@ -136,6 +143,16 @@ de administración (conductores, buses, asignaciones).
   promesa JS pendiente no equivale a cierre HeadlessJS, ni prueba dos motores
   GPS completos simultáneos en Android. No se extrapola a una jornada de 8 h.
   Ver `BUGS_RESUELTOS/driverapp.md` (CASO 020) y `ARCHITECTURE.md` §8.
+- **Respaldo offline de la asignación (I08, 01/11/2026)**: implementado y
+  validado físicamente en la rama `feat/i08-asignaciones-diarias`;
+  pendiente de integración/publicación. El respaldo vive solo en memoria
+  (no sobrevive al proceso ni al cambio de día) y no detecta altas,
+  cancelaciones ni reasignaciones administrativas ocurridas offline. Solo
+  se habilita con `.info/connected == false`, no con un timeout aislado.
+  La ruta offline se probó sin desplazamiento físico; el remontaje durante
+  el recorrido se cubre con Jest. El APK validado es anterior al cambio de
+  etiqueta «Servicio de ubicación activo»; no se generó otro. Ver
+  `BUGS_RESUELTOS/driverapp.md` (CASO 021) y ADR-028.
 - **Precisión GPS**: el campus de la UNMSM produce interferencia
   estructural (efecto multipath) con márgenes de error de ±10–15 metros.
 - **Dependencia de red móvil**: la sincronización en tiempo real requiere

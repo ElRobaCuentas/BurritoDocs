@@ -422,11 +422,12 @@ SendCoordinates monta useEffect
 loadAssignment() (C4.3): lee /choferes/{dni} y /asignaciones con
 timeout de 10s por intento y hasta 2 reintentos acotados
     ↓
-Filtra por fecha===today && activo===true
-    ├── Sí: guarda busId en estado local
-    └── No / agota reintentos:
-        ├── Sin asignación válida → "No tienes un bus asignado"
-        └── Error de red → errorCard (REINTENTAR / CERRAR SESIÓN)
+queryDailyAssignment() (I08): orderByChild('choferId')/equalTo(dni) y
+selecciona con la fecha America/Lima resuelta, no con la del montaje
+    ├── Activa del día → valida busId y conserva el respaldo en memoria
+    ├── Ausente / cancelada / duplicada / otro chofer / datos inválidos
+    │   → mensaje de bloqueo; revoca el respaldo anterior
+    └── Error de red → errorCard (REINTENTAR / CERRAR SESIÓN)
 ```
 
 ### Flujo de autenticación (UserApp)
@@ -486,7 +487,7 @@ Admin crea admin:
 | `index.js` | Registro de la app, comentario sobre persistence desactivada, import gesture-handler |
 | `src/DriverApp.tsx` | Auth gate (login ↔ tracking conductor) |
 | `src/screen/LoginDriverScreen.tsx` | Login con DNI, manejo de errores de autenticación |
-| `src/screen/SendCoordinates.tsx` | Asignación de bus, permisos, foreground service, GPS, debug console |
+| `src/screen/SendCoordinates.tsx` | Validación diaria de asignación, permisos, foreground service, GPS, debug console |
 | `src/services/firebase_service.ts` | `updateBusLocation()` y `stopBusService()` contra RTDB |
 | `src/shared/utils/timeout.ts` | Helper con timeout para lecturas RTDB |
 
@@ -585,15 +586,24 @@ Estado inicial: app cerrada, sin sesión
 4. DriverApp renderiza SendCoordinates(driverDni)
     ↓
 5. useEffect: loadAssignment() consulta /choferes/{dni} y /asignaciones
-   con timeout de 10s por intento y hasta 2 reintentos acotados (C4.3)
+   con timeout de 10s por intento y hasta 2 reintentos acotados (C4.3).
+   La selección usa queryDailyAssignment() con la fecha America/Lima (I08).
     ↓
-6. ¿Asignación activa encontrada?
-    ├── Sí: guarda busId, habilita botón INICIAR
+6. ¿Asignación activa del día encontrada?
+    ├── Sí: guarda busId y el respaldo en memoria; muestra el bus
     ├── No: muestra "No tienes un bus asignado"
     └── Error (se agotan los reintentos): errorCard
         "No se pudo cargar tu asignación" con REINTENTAR y CERRAR SESIÓN
+    INICIAR permanece disponible: la validación ocurre al presionarlo (I08)
     ↓
 7. Usuario presiona INICIAR RECORRIDO
+    ↓
+7a. Revalida la asignación del día (I08):
+     ├── Consulta válida → usa esa asignación y fija trackingIntent.run
+     ├── Respuesta conocida inválida/ausente → bloquea y revoca el respaldo
+     └── Consulta fallida + .info/connected == false + respaldo del mismo
+         conductor/día → continúa con el respaldo en memoria (ruta B)
+         Un timeout aislado no autoriza el respaldo
     ↓
 8. requestAllPermissions():
     ├── POST_NOTIFICATIONS (API 33+)
@@ -667,6 +677,30 @@ Cerrar sesión (acción independiente, ADR-026):
   Tras éxito nativo, la solicitud remota se emite antes de liberar INICIAR,
   sin esperar confirmación. Sus ACK antiguos solo informan diagnóstico
   como operación anterior; no reescriben ni cambian el estado local.
+- **Asignación diaria (I08)**: la validación usa `queryDailyAssignment()`,
+  que consulta `/asignaciones` por `choferId`, resuelve la fecha en
+  `America/Lima` al momento de la consulta y descarta registros cancelados,
+  duplicados, de otro conductor o con datos inválidos. Al presionar INICIAR
+  se revalida: una respuesta válida fija `trackingIntent.run =
+  { driverDni, busId }`, identidad que usan GPS y parada aunque el estado
+  remontado o la asignación cambien después. Los `turnos` siguen siendo
+  informativos: no habilitan ni bloquean el tracking (ADR-028).
+- **Respaldo offline de la asignación (I08)**: si la consulta falla por red
+  y `.info/connected` reporta desconexión, INICIAR puede continuar con el
+  respaldo en memoria, solo si corresponde al mismo conductor y a la misma
+  fecha. Ese respaldo no persiste entre procesos, se revoca ante una
+  respuesta conocida como inválida y no permite adivinar altas,
+  cancelaciones ni cambios administrativos ocurridos durante la
+  desconexión. Un timeout aislado no se interpreta como offline.
+- **Ruta especial `.info/connected` (I08)**: el SDK instalado solo acepta
+  la ruta sin barra inicial (`ref('.info/connected')`); con `/` lanza
+  excepción. La desconexión conocida habilita el respaldo, pero no prueba
+  entrega ni confirmación de escrituras remotas. Ver
+  `BUGS_RESUELTOS/driverapp.md` (CASO 021).
+- **Etiqueta de estado (I08)**: «Servicio de ubicación activo» describe el
+  servicio Android local en ejecución; no afirma que la última posición se
+  haya publicado en RTDB ni distingue conectado/desconectado. La UI no
+  agrega listeners de conectividad en esta fase (ADR-028).
 - **Restauración del estado al re-montar (C4.7, actualizado por I07)**:
   `SendCoordinates` toma el estado compartido y escucha `PRO_TRACKING_STATE`
   para recibir también el resultado de operaciones iniciadas antes del

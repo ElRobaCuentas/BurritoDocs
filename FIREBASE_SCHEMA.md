@@ -290,6 +290,16 @@ renderizan condicionalmente. No se hace migración masiva.
 por las reglas actuales (lectura autenticada, escritura admin). El índice
 `.indexOn` sigue siendo `choferId`.
 
+**Nota (I08)**: la DriverApp valida la asignación al montar y de nuevo al
+presionar INICIAR, con `orderByChild('choferId').equalTo(dni)` y la fecha
+`America/Lima` resuelta en ese momento. Una respuesta conocida como ausente,
+cancelada, duplicada, de otro conductor o inválida bloquea el inicio y
+revoca el respaldo anterior. Si la consulta falla y `.info/connected`
+reporta desconexión, puede continuar con un respaldo **en memoria** del
+mismo conductor/día (no persiste ni cubre cambios administrativos offline;
+ADR-028). `.info/connected` es una ruta especial del SDK, sin `/` inicial:
+no es un nodo de datos y no confirma escrituras.
+
 ### `/administradores/{auth.uid}` (nuevo)
 
 - **Propósito**: fuente única de verdad para autorización administrativa.

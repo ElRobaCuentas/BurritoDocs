@@ -28,6 +28,7 @@ dependencias funcionales.
 | UX-02 | Native-stack en AdminNavigator, gestureEnabled, headers eliminados | BurritoDriverApp |
 | UX-03 | Dependencias: react-native-vector-icons, native-stack | BurritoDriverApp |
 | I08 | Asignaciones para hoy/futuro con uno o varios turnos en AdminWeb; exclusividad conductor/fecha y compatibilidad legacy. Implementado; pendiente commit/deploy. | AdminWeb |
+| I08 (DriverApp) | Validación de la asignación del día `America/Lima` al montar y al iniciar, respaldo offline acotado mediante `.info/connected`, identidad del recorrido y etiqueta de estado local. Implementado y validado; commit en rama, pendiente de integración/publicación. | BurritoDriverApp |
 
 ## 3. UX / UI Polishing — BurritoDriverApp
 

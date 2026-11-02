@@ -587,6 +587,90 @@ Referencias:
 
 ---
 
+## CASO 021 — INICIAR offline no habilitaba el respaldo por la ruta `/\.info/connected` (I08)
+
+Síntoma:
+El 01/11/2026, con AHK-459 y la asignación del día ya cargada, INICIAR sin
+red mostraba "No se pudo validar la asignación…" y no iniciaba el servicio.
+Con red, el mismo recorrido iniciaba y publicaba normalmente.
+
+Causa Raíz:
+El chequeo de desconexión usaba `database().ref('/.info/connected')`. El SDK
+instalado solo admite las rutas especiales sin barra inicial; la variante con
+`/` lanza una excepción de ruta inválida. El `catch` del chequeo la absorbía y
+dejaba `offline = false`, de modo que la consulta fallida por red nunca
+habilitaba el respaldo en memoria. El timeout de la consulta no era la causa.
+
+Solución (tarea I08):
+- Referencia corregida a `database().ref('.info/connected')` (una línea de
+  producción). El mock de pruebas rechaza explícitamente la variante con `/`
+  para que la regresión no vuelva a pasar.
+- La validación al INICIAR usa `queryDailyAssignment()` con la fecha
+  `America/Lima` del momento; una respuesta conocida como inválida revoca el
+  respaldo. Solo una consulta fallida **con desconexión confirmada** permite
+  iniciar con el respaldo del mismo conductor y fecha (ADR-028).
+- `trackingIntent.run = { driverDni, busId }` conserva la identidad del
+  recorrido para GPS y parada aunque la pantalla se remonte.
+- Etiqueta de UI cambiada de «Compartiendo ubicación» a «Servicio de
+  ubicación activo»: describe el servicio Android local; no afirma que la
+  última posición se haya publicado. Las aserciones de I07 e I08 se
+  actualizaron conservando su lógica `true`/`false`.
+
+Archivos:
+`Driver/src/screen/SendCoordinates.tsx`,
+`Driver/__tests__/SendCoordinates.assignment.test.tsx` (nueva suite I08,
+33 pruebas) y `Driver/__tests__/SendCoordinates.stop.test.tsx` (aserciones
+de etiqueta). No se agregaron estados, listeners ni dependencias.
+
+Estado:
+Corregido, validado físicamente y pendiente de integración/publicación
+(01/11/2026). Rama `feat/i08-asignaciones-diarias`; commit propio de Driver y
+commit documental independiente en `docs`.
+- Primer APK offline falló con el síntoma anterior; se corrigió la ruta y se
+  repitió el escenario con un APK nuevo, que inició, publicó tras reconectar
+  y detuvo con `isActive=false` estable.
+- Aprobado online: inicio 22:37:58 y parada 22:41:18.719, con publicaciones
+  atribuidas a esa jornada.
+- Aprobado offline (ruta B): INICIAR a las 23:05:56 sin red, reconexión con
+  publicaciones y parada final 23:08:38.062. La regresión posterior quedó en
+  `isActive=false`, sin servicio activo.
+- Regresión de cierre: Jest 97/97 (seis suites; 64 de I07 + 33 de I08);
+  `tsc --noEmit`, ESLint de los tests y `git diff --check`: exit 0.
+  `npm run lint` global conserva el único error preexistente
+  `asignacionId` unused en `SendCoordinates.tsx`; no se corrigió ni se oculta.
+- Comando Jest usado, sin cambiar `jest.config.js`:
+  `node node_modules/jest/bin/jest.js --runInBand --transformIgnorePatterns 'node_modules/(?!((jest-)?react-native|@react-native(-community)?|react-native-background-actions)/)'`.
+- SHA-256 del APK validado físicamente:
+  `e604c06891581a86844ce57a0216c38788a70f7b927161a6de63dcf5a8feb6ff`.
+  Ese APK **no contiene** el microcambio de etiqueta posterior; no se generó
+  otro APK para esa etiqueta.
+
+Limitaciones:
+- El respaldo offline es en memoria: no sobrevive al reinicio del proceso ni
+  al cambio de día.
+- No detecta altas, cancelaciones ni reasignaciones administrativas ocurridas
+  durante la desconexión; al reconectar, la siguiente validación manda.
+- La ruta offline se probó sin desplazamiento físico; el remontaje durante el
+  recorrido se cubre con Jest, no con una prueba física.
+- No se observó la ruta A (consulta válida al iniciar) en este bloque; la
+  cobertura es automática.
+- No se forzaron fallos nativos ni se validó una jornada de 8 horas.
+
+Lección:
+Un `catch` que solo registra o degrada un flag puede convertir un error de
+contrato del SDK en una decisión de negocio equivocada. Las rutas `.info` no
+son nodos de datos: no llevan `/` inicial y no confirman entregas remotas.
+Un timeout aislado no prueba desconexión; el respaldo offline debe ser
+acotado, revocable y explícito sobre lo que no puede observar.
+
+Referencias:
+- `C:/Users/matia/AppData/Local/Temp/opencode/i08_20261101_223147/INFORME_REPETICION_OFFLINE_I08.md`
+- `C:/Users/matia/AppData/Local/Temp/opencode/i08_20261101_223147/i08_fix_baseline.xml`
+- `C:/Users/matia/AppData/Local/Temp/opencode/i08_20261101_223147/i08_fix_offline.xml`
+- `C:/Users/matia/AppData/Local/Temp/opencode/i08_20261101_223147/i08_fix_final.xml`
+
+---
+
 ## Hallazgos de auditoría pendientes (sin corrección)
 
 Hallazgos detectados durante la validación de C4.2. Se registran por separado

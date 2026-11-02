@@ -1320,6 +1320,74 @@ ADR-024, ADR-026.
 
 ---
 
+### ADR-028: Validación diaria y respaldo offline acotado de la asignación en BurritoDriverApp
+
+**Estado:** Aceptada.
+
+**Contexto:**
+
+I08 exige que la DriverApp valide que el conductor tiene un bus asignado
+para el día calendario `America/Lima`, y que el bus usado al iniciar sea el
+vigente. La validación ocurre al montar la pantalla, pero entre esa lectura
+y el INICIAR puede pasar tiempo o cambiar el registro; el backend también
+puede cancelar o reasignar. A la vez, una pérdida de red justo antes de
+iniciar no debería dejar al conductor sin operar si ya contaba con una
+asignación validada, sin que la app invente validaciones que no puede
+observar. Un timeout aislado no distingue caída de red de permisos,
+índices o errores reales.
+
+**Decisión:**
+
+1. La lectura de `/asignaciones` es por `choferId` y la fecha se resuelve en
+   `America/Lima` **en el momento de la consulta**, no al montar.
+2. Al presionar INICIAR se revalida la asignación. Una respuesta válida
+   reemplaza la anterior; una respuesta conocida como ausente, cancelada,
+   duplicada, de otro conductor o inválida bloquea el inicio y revoca el
+   respaldo previo.
+3. Si la consulta falla por red y `.info/connected` reporta desconexión,
+   se puede iniciar con un **respaldo en memoria** de la asignación ya
+   validada, solo si coincide el conductor y la fecha. El respaldo no se
+   persiste en disco y no sobrevive al proceso.
+4. Un timeout o un error sin desconexión confirmada no habilita el respaldo.
+5. La identidad del recorrido se fija en `trackingIntent.run =
+   { driverDni, busId }`; GPS, heartbeat y parada la conservan aunque la
+   pantalla se remonte o la asignación cambie.
+6. `turnos` sigue siendo informativo: no inicia ni detiene el tracking
+   (ADR-027).
+7. La etiqueta «Servicio de ubicación activo» describe el servicio Android
+   local; no confirma publicación en RTDB ni agrega un indicador de
+   conectividad en esta fase.
+
+**Alternativas consideradas:**
+
+- Persistir el respaldo en disco: descartado; un respaldo de otro día o una
+  cancelación ocurrida offline quedaría vigente hasta que se validara.
+- Aceptar cualquier timeout como desconexión: descartado; oculta errores de
+  permisos, índices o reglas y convierte un fallo real en inicio permitido.
+- Consultar solo al montar y no revalidar: descartado; el bus usado podría
+  no ser el vigente y una cancelación no se detectaría antes de iniciar.
+- Agregar NetInfo o un monitor de conectividad: descartado para esta fase;
+  `.info/connected` cubre la comprobación puntual sin nuevas dependencias.
+- Usar los turnos para habilitar el tracking: descartado (ADR-026, ADR-027).
+
+**Consecuencias:**
+
+- El conductor puede iniciar offline con una asignación previamente
+  validada; si el administrador la canceló durante la desconexión, la app
+  no puede saberlo hasta reconectar y la operación puede continuar.
+- El respaldo en memoria no cubre reinicio del proceso ni cambio de día.
+- `.info/connected` debe referenciarse sin barra inicial; la variante
+  `/…` lanza excepción en el SDK instalado (ver
+  `BUGS_RESUELTOS/driverapp.md`, CASO 021).
+- El inicio offline es una ruta soportada; su cobertura física se limitó a
+  un escenario sin desplazamiento y a la suite automatizada.
+
+**Referencias:** ARCHITECTURE.md (§8, ciclo de vida y notas I08),
+FIREBASE_SCHEMA.md (`/asignaciones`), TROUBLESHOOTING.md (§4),
+BUGS_RESUELTOS/driverapp.md (CASO 021), ADR-003, ADR-026, ADR-027.
+
+---
+
 ## Referencias
 
 | Documento | Relación |

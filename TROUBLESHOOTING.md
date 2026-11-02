@@ -102,6 +102,16 @@ Cada caso documenta: **síntoma**, **causa**, **diagnóstico**,
 | Solución | No requiere acción inmediata. Ambos métodos coexisten porque los paths son distintos. Al unificar tracking, debe elegirse uno |
 | Prevención | FIREBASE_SCHEMA.md documenta qué método usa cada nodo |
 
+### Inicio offline rechazado pese a tener asignación del día (I08)
+
+| Campo | Descripción |
+|-------|-------------|
+| Síntoma | Sin red, INICIAR muestra "No se pudo validar la asignación…" aunque la pantalla ya había cargado la asignación del día; con red el mismo flujo funciona |
+| Causa | El chequeo usaba `database().ref('/.info/connected')`. El SDK instalado solo admite la ruta especial **sin** barra inicial; la llamada lanzaba excepción, el `catch` la absorbía y `offline` quedaba en `false` |
+| Diagnóstico | Repetir con Wi-Fi y datos apagados y observar que la consulta falla por timeout pero el respaldo no se habilita. En el código, buscar la referencia `.info`; el error no aparece en Logcat porque se captura |
+| Solución | Corregido en I08: `database().ref('.info/connected')`. Con desconexión confirmada, INICIAR puede usar el respaldo en memoria del mismo conductor/día. Los tests rechazan la variante con barra inicial; no confundir un timeout aislado con desconexión |
+| Prevención | Tratar `.info/connected` y `.info/serverTimeOffset` como rutas especiales sin `/`. Ver ADR-028 y BUGS_RESUELTOS/driverapp.md (CASO 021) |
+
 ## 5. Autenticación
 
 ### Auth gate cuelga offline (spinner infinito sin CERRAR SESIÓN)
@@ -313,6 +323,9 @@ actual del proyecto, planificadas en fases futuras del roadmap.
 | No hay geofencing ni cierre automático de vueltas | Planificado (Fase 2) |
 | iOS no soportado para DriverApp | Limitación de plataforma |
 | Regresión de DriverApp al cierre I07 | Reportada el 01/11/2026: 64/64 tests, cinco suites; el wrapper real requiere el flag transformIgnorePatterns documentado en CASO 020, sin cambiar jest.config.js. Lint global falla por asignacionId unused preexistente en SendCoordinates.tsx:277:12; TSC y ESLint de los cinco tests: exit 0. |
+| Regresión de DriverApp al cierre I08 | Reportada el 01/11/2026: 97/97 tests, seis suites (64 de I07 + 33 de I08). `tsc --noEmit`, ESLint de los tests y `git diff --check`: exit 0. `npm run lint` global conserva el único error preexistente `asignacionId` unused en `SendCoordinates.tsx`; no se corrigió. |
+| Respaldo offline de la asignación | El respaldo vive en memoria (no sobrevive al proceso) y no puede detectar altas, cancelaciones ni cambios administrativos ocurridos durante la desconexión. Solo se habilita con `.info/connected == false`, no con un timeout aislado (ADR-028). |
+| Etiqueta «Servicio de ubicación activo» | Describe el servicio Android local en ejecución; no confirma publicación en RTDB ni distingue conectado/desconectado. Decisión de MVP en I08 (ADR-028). |
 | Exposición histórica de la contraseña de firma de release | La contraseña quedó expuesta en el historial de Git. El keystore de release no se encontró en el historial auditado y no hay evidencia identificada de uso indebido. La configuración de firma actual se conserva. No se ha decidido rotar la clave; la decisión se reevaluará si aparecen evidencias de compromiso o cambian las condiciones de riesgo. |
 | Corte de red **durante** la sesión: Firebase no dispara `onError`; en DriverApp la recuperación depende del heartbeat T4.1 (catch-reset) y en UserApp el bus caducado se oculta por expiración de timestamp (estrategia C) | Atenuado por C4.6+T4.1 (22/08); escenario obligatorio del checklist de T1 |
 | El icono/marca del menú lateral usa el placeholder por defecto de react-navigation; el logo oficial solo llega al splash y al launcher | Por resolver (rebranding incompleto) |
