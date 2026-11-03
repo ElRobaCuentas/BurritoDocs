@@ -245,3 +245,38 @@ El splash debe ocultarse con un evento del ciclo de vida real del árbol
 de navegación (`onReady`), no con un temporizador ni con `onFinish` de
 una animación.
 
+## CASO 019 — Timestamp de mañana bloqueaba ubicaciones posteriores (I06-B)
+
+**Fecha:** 03/11/2026.
+
+**Síntoma y causa:** `MapService` admitía cualquier entero positivo de
+timestamp. Una publicación +24 h llegaba al store y el filtro de orden
+rechazaba las publicaciones normales posteriores por ser «anteriores».
+Se reprodujo con código real en memoria: `futureAccepted: true` y
+`subsequentValidLocationDiscarded: true`.
+
+**Solución:** rechazar en `MapService` timestamps mayores que hora de
+recepción + 300 000 ms; límite exacto aceptado. Una referencia horaria por
+snapshot. No se recorta el timestamp ni se cambia el store, la caducidad o
+el movimiento. Los respaldos ausentes/null de I06-A se conservan según lo
+acordado el 30/10 y ratificado el 03/11; no son un defecto nuevo de auditoría.
+
+**Archivos:** `User/src/features/map/services/map_service.ts`,
+`User/__tests__/map_service.test.ts`, `User/__tests__/map_service.store.test.ts`.
+
+**Verificación:** 11 nuevas pruebas aprobadas; suite completa 124/124,
+diez suites. Incluye +24 h/+300 001 ms rechazados, +300 000 ms aceptados,
+detenciones y dos secuencias con MapService/store reales y solo Firebase
+simulado. La fecha futura no entra ni reemplaza posición previa y la
+siguiente publicación normal sí se almacena. TypeScript pasa; lint global
+mantiene 21 errores/50 warnings previos, cero diagnósticos en archivos tocados.
+
+**Estado:** corregido y verificado localmente en `011a4b6`
+(`fix/i06-future-timestamps`), pendiente de revisión,
+integración/push y APK actualizado. No se desplegó ni se probó en Android
+esta corrección; la jornada de ~8 h sigue pendiente.
+
+**Límite:** tolerancia autorizada, no sincronización horaria. Desfases
+persistentes pueden descartar datos, y adelantos dentro del margen pueden
+demorar datos posteriores. Ver ADR-030 y PROJECT_CONTEXT.md §5.
+

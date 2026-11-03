@@ -109,6 +109,16 @@ borrado del dato pendiente en Consola).
 | `timestamp` | number | Unix epoch ms — última actualización **publicada** por la DriverApp. Puede provenir del fix GPS o del heartbeat de presencia (T4.1). No debe leerse como "el momento exacto del GPS". |
 | `isActive` | boolean | `true` durante tracking, `false` al detener |
 
+**Validación de recepción I06 (03/11/2026):** se rechazan valores explícitos
+incorrectos. I06-A conserva coordenadas `0` y timestamp `Date.now()` para
+campos ausentes/null, como limitación aceptada desde el 30/10. No implica
+que todo registro incompleto sea rechazado. I06-B descarta timestamps
+explícitos mayores que hora local de recepción + **300 000 ms**; el límite
+exacto se acepta. No modifica payload ni reglas RTDB: es un filtro cliente
+antes del store. Un dato rechazado no renueva la posición/caducidad previa.
+No sincroniza los relojes ni resuelve adelantos dentro del margen (ADR-030).
+Corrección verificada localmente, integración/push y APK pendientes al corte.
+
 **Inicialización desde admin**: al crear un bus en el panel
 administrativo, se escribe `{ isActive: false }` en
 `/ubicacion_buses/{placa}` como marcador de existencia.
@@ -169,7 +179,7 @@ ADR-025). El mismo mecanismo usa `createAdmin()` con `{dni}@admin.com`.
 
 - **Propósito**: índice inverso uid→DNI que permite a las Security Rules
   verificar que un usuario autenticado es un conductor registrado, sin
-  exponer el catálogo `/choferes` (que tiene `.read` amplio). Es la base
+  exponer el catálogo `/choferes` (lectura admin y perfil propio tras I03). Es la base
   de la autorización de escritura sobre `/ubicacion_buses` (ADR-023).
 - **Escritura**: `admin_service.createChofer()` (AdminWeb)
   escribe `{uid: dni}` inmediatamente después de crear la cuenta Auth y
@@ -346,8 +356,10 @@ solo comprueba que la clave exista, por lo que ambos siguen siendo válidos.
 
 **Propiedad del nodo**: AdminWeb (admin) escribe/lee los nodos de gestión
 (`/choferes`, `/buses`, `/asignaciones`). La UserApp ya no consulta ni
-escribe en estos nodos. La DriverApp solo lee `/asignaciones` para obtener
-su turno. El administrador accede al panel exclusivamente desde AdminWeb.
+escribe en estos nodos. BurritoDriverApp lee su perfil `/choferes/{dni}` y
+consulta `/asignaciones` por `choferId` para obtener el bus del día
+`America/Lima` (I08); los turnos son informativos y no gobiernan el GPS.
+El administrador accede al panel exclusivamente desde AdminWeb.
 
 ## 5. Nodos de Autenticación
 
@@ -425,12 +437,23 @@ la escritura sobre ese nodo exige ser un administrador ya existente.
 | `email` | string | Email del remitente |
 | `timestamp` | number | ServerValue.TIMESTAMP (generado por Firebase) |
 
+**Contrato I04 publicado:** la colección no admite escritura directa;
+solo creación de un hijo que aún no existe, con `uid` string igual a
+`auth.uid` y `rating` numérico entero entre 1 y 5. No permite actualizar ni
+borrar comentarios existentes. Los campos opcionales `username`, `avatar`,
+`mensaje` y `email`, si existen, deben ser strings; `timestamp`, si existe,
+debe ser numérico positivo. No se impone lista cerrada de campos, límites
+de longitud ni rate limiting. `CustomDrawer` obtiene el UID de Firebase
+Auth; el servicio contrasta ese UID con la sesión y usa `push().set()` con
+timestamp de servidor (User `5bc3a83`). La lectura permanece denegada.
+
 ## 7. Estado del Esquema
 
 El esquema se encuentra consolidado tras la migración multi-bus (T3.1),
 la migración del panel admin a la aplicación web **AdminWeb** (ADR-025) y
 el endurecimiento de las reglas de seguridad por UID (23/08/2026,
-ADR-023). El nodo heredado `/ubicacion_burrito` fue eliminado de las
+ADR-023), ampliado por I03/I04 (publicación y validación real informadas por
+el usuario el 03/11/2026; ver §9). El nodo heredado `/ubicacion_burrito` fue eliminado de las
 reglas; todo el tracking fluye a través de `/ubicacion_buses/{placa}`.
 
 ### Nodos activos (flujo actual)
@@ -509,13 +532,25 @@ Esta sección describe **tres niveles distintos** que no deben mezclarse:
    capturó en el repositorio (hoy **retirada**).
    Era una captura histórica (S2), nunca una representación garantizada de
    lo desplegado.
-3. **Permisos efectivos (c)**: las reglas realmente desplegadas en la
-   instancia de Firebase. **Solo verificables desde Firebase Console.**
-   Marcadas como **[NO VERIFICABLE]** desde el repositorio.
+3. **Permisos efectivos (c)**: las reglas realmente desplegadas en Firebase.
+   El repositorio por sí solo no certifica su estado actual. Se distingue
+   entre inspección directa y publicación/operación informadas por el usuario.
 
-Las afirmaciones de seguridad de este documento describen (a) y (b). No
-certifican (c): hasta contrastar con Console, los permisos efectivos
-permanecen **[NO VERIFICABLE]**.
+**Corte I03/I04 — 03/11/2026:** el usuario confirmó la publicación y validó
+operaciones reales: AdminWeb administra, BurritoDriverApp autentica/carga
+asignación/inicia-detiene GPS y El Burrito muestra el bus y crea feedback
+con Auth UID. Previamente se aprobaron 72/72 pruebas de reglas y la
+integración funcional B2 en emuladores. La tabla siguiente corresponde a
+esa candidata publicada, contrastada con el código y la evidencia local;
+no es una nueva lectura ni certificación live de Firebase en esta fase.
+
+Referencia SHA-256 de la candidata publicada:
+`0BFAC5C2D900F6900B3E975D6CEFA7A34DBC38DCF6929A4D5C4FD2BA283359C2`.
+I03/I04 introdujeron seis diferencias en `/choferes`, `/asignaciones` y
+`/comentarios`. No se copia ni se versiona aquí un volcado de reglas.
+La fuente autoritativa sigue siendo Firebase Console; cambios remotos
+posteriores requieren nueva comprobación. B2 se conserva aislado en
+AdminWeb `test/b2-adminweb-emulator` (`dc58daf`); no integra producción.
 
 ### Modelo de autorización admin (post-migración)
 
@@ -576,27 +611,26 @@ Consola.
 | Nodo | .read | .write | Notas |
 |------|-------|--------|-------|
 | `/usuarios/{uid}` | Solo dueño | Solo dueño | Perfil personal |
-| `/comentarios` | `false` | `auth != null` | Solo escritura, lectura desde Consola |
-| `/administradores` | `auth != null` | Admin existente | Lectura autenticada. Escritura de un administrador ya existente; el primer admin se crea en Consola |
-| `/asignaciones` | `auth != null` | Solo admin | DriverApp necesita lectura, admin escribe |
+| `/comentarios` | Denegada | Denegada en colección; creación de hijo nuevo con Auth UID propio y rating entero 1–5 | I04: validaciones §6; no editar ni borrar, tampoco mediante sesión admin |
+| `/administradores` | Solo admin existente | Solo admin existente | Primer admin por Consola; auth gate trata PERMISSION_DENIED como sin rol |
+| `/asignaciones` | Admin; conductor indexado solo con consulta `orderByChild('choferId').equalTo(dni)` correspondiente a su índice | Solo admin | I03: deniega listado sin filtro y consulta de otro conductor; `.indexOn: choferId` conservado; compatible con I08 |
 | `/ubicacion_buses` | `true` | Conductor indexado o admin | Lectura pública; escritura vía `/choferes_uids` o `/administradores` (ADR-023) |
-| `/choferes` | `auth != null` | Solo admin | Catálogo legible por usuarios autenticados; escritura exclusiva de admin |
+| `/choferes` | Colección solo admin; conductor indexado puede leer `/choferes/{suDni}` | Solo admin | I03: deniega estudiante, listado del conductor y perfil ajeno; las reglas consultan el índice internamente |
 | `/choferes_uids` | `false` | Solo admin | Índice uid→DNI para reglas (ADR-023); sin lectura de cliente |
 | `/buses` | Solo admin | Solo admin | Gestión exclusiva de administradores |
 
 ### Discrepancias detectadas (S2) y resolución
 
 Comparación entre la captura local de reglas (nivel b, hoy retirada)
-y la tabla de permisos anterior. Los permisos
-**desplegados** (nivel c) no son verificables desde el repositorio:
+y la tabla histórica anterior. Se conserva el antecedente; para el corte
+actual prevalecen la tabla I03/I04 y su alcance de evidencia descrito arriba:
 
 1. **`/choferes` (.read)**: la tabla documentaba `Solo admin`, pero la
-   captura local de reglas permite `.read: "auth != null"` — cualquier
-   usuario autenticado puede leer el directorio de conductores. El
-   `.write` sí coincide (solo admin). **Estado: divergencia vigente**;
-   la tabla fue actualizada el 23/08/2026 para reflejar la captura.
-   Restringir la lectura a solo-admin queda como decisión futura si el
-   catálogo deja de ser necesario para clientes.
+   captura local de reglas permitía `.read: "auth != null"` — cualquier
+   usuario autenticado podía leer el directorio de conductores. El
+   `.write` sí coincidía (solo admin). La tabla se actualizó el 23/08/2026
+   para reflejar esa captura. **Resuelto por I03:** colección solo admin y
+   perfil propio para el conductor, publicado/validado según el corte 03/11.
 2. **Nodo legacy `/ubicacion_burrito`**: estaba presente en las reglas
    con `.read: true`. **RESUELTO el 23/08/2026**: el bloque fue
    eliminado de las reglas publicadas (denegado por defecto) y retirado
@@ -632,8 +666,9 @@ Este predicado reemplaza al anterior:
 2. **Lectura en `/ubicacion_buses`**: es pública (`true`). Cualquier
    persona con la URL de la base de datos puede leer ubicaciones en
    vivo.
-3. **Escritura en `/comentarios`**: solo se exige autenticación. No hay
-   rate limiting ni validación del contenido.
+3. **Escritura en `/comentarios`**: I04 ya exige creación, UID propio,
+   rating entero 1–5 y tipos de campos opcionales (§6). Aún no hay rate
+   limiting, moderación, límite de longitud ni lista cerrada de campos.
 
 ### Mejora planificada (Fase 4/5)
 

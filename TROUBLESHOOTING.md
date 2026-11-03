@@ -72,6 +72,29 @@ Cada caso documenta: **síntoma**, **causa**, **diagnóstico**,
 
 ## 4. Firebase y RTDB
 
+### Permisos I03/I04: lecturas y feedback denegados
+
+El 03/11/2026 el usuario confirmó publicación y operación real con las
+reglas I03/I04, tras laboratorio 72/72 y B2 funcional. Un estudiante ya no
+puede leer `/choferes` ni `/asignaciones`; el conductor lee su perfil
+individual y consulta asignaciones con `orderByChild('choferId').equalTo(dni)`.
+AdminWeb conserva acceso admin. Feedback solo permite crear hijos nuevos
+con Auth UID propio y rating entero 1–5; modificar/borrar se deniega.
+Ante `PERMISSION_DENIED`, contrastar sesión, consulta y contrato antes de
+ampliar permisos. Tabla y alcance de evidencia en FIREBASE_SCHEMA.md §9;
+no hay un volcado versionado de reglas ni una nueva inspección live en
+esta fase. I09 (escritura GPS por asignación) continúa postergada.
+
+### I06-B: fecha excesivamente futura / ubicación que no avanza
+
+Desde la corrección local del 03/11, `MapService` descarta timestamps
+explícitos mayores que hora local de recepción + 300 000 ms. Revisar
+relojes del emisor/receptor; no confundir timestamp publicado con edad del
+fix GPS. No sustituir fechas inválidas por «ahora». Se conserva I06-A
+(campos ausentes/null usan respaldos) como limitación aceptada.
+La última posición válida no se renueva por un dato rechazado y caduca
+según el mecanismo existente. Ver ADR-030 y CASO 019 de userapp.md.
+
 ### Missing index en /asignaciones
 
 | Campo | Descripción |
@@ -319,6 +342,10 @@ actual del proyecto, planificadas en fases futuras del roadmap.
 
 | Problema | Estado |
 |----------|--------|
+| I06-A: campos ausentes/null se normalizan a coordenadas 0 y timestamp actual | Limitación aceptada el 30/10 y ratificada el 03/11; no afirmar rechazo de todo registro incompleto |
+| I06-B: desfase de relojes | Se rechaza adelanto >5 min; dentro del margen sigue pudiendo retrasar datos/caducidad. Corrección local probada, publicación/APK pendientes |
+| Foco de modales AdminWeb | Corrección local en Modal.tsx; verificaciones técnicas aprobadas, comprobación visual en navegador pendiente. Ver BUGS_RESUELTOS/adminweb.md |
+| Regresión posterior al corte 03/11 | User 124/124 (10 suites) tras I06-B; Driver 120/120 versionadas (9 suites) en auditoría previa, sin test protegido. TypeScript aprobado; lint User 21 errores/50 warnings previos, Driver 1 error previo. No es evidencia de jornada completa |
 | La UserApp muestra un solo bus (multi-bus no implementado) | Planificado (Fase 1) |
 | No hay geofencing ni cierre automático de vueltas | Planificado (Fase 2) |
 | iOS no soportado para DriverApp | Limitación de plataforma |

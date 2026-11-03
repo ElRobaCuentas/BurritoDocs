@@ -9,6 +9,12 @@ completada y el panel quedó en **AdminWeb** (ADR-025), cerrando el
 deadlock arquitectónico entre el spinner de Mapbox y el panel admin. El
 backlog oficial detallado vive en `MVP.md`.
 
+**Corte 03/11/2026:** prioridad = correcciones mínimas y jornada de aceptación
+de ~8 h, no nuevas funcionalidades. I06-A permanece aceptada; I06-B y foco
+AdminWeb están corregidos/verificados localmente, pendientes de revisión,
+integración y push. Graphify diferido por el usuario para una intervención
+posterior autorizada. Las fases de expansión más abajo son Post-MVP.
+
 A partir de aquí, el roadmap se organiza en dos bloques con
 dependencias funcionales.
 
@@ -27,8 +33,9 @@ dependencias funcionales.
 | UX-01 | Ciclo 3 estados en SendCoordinates (separar stopProcess de signOut), FloatingBackButton, FloatingBackButton en CRUDs | BurritoDriverApp |
 | UX-02 | Native-stack en AdminNavigator, gestureEnabled, headers eliminados | BurritoDriverApp |
 | UX-03 | Dependencias: react-native-vector-icons, native-stack | BurritoDriverApp |
-| I08 | Asignaciones para hoy/futuro con uno o varios turnos en AdminWeb; exclusividad conductor/fecha y compatibilidad legacy. Implementado; pendiente commit/deploy. | AdminWeb |
-| I08 (DriverApp) | Validación de la asignación del día `America/Lima` al montar y al iniciar, respaldo offline acotado mediante `.info/connected`, identidad del recorrido y etiqueta de estado local. Implementado y validado; commit en rama, pendiente de integración/publicación. | BurritoDriverApp |
+| I03/I04 | Reglas publicadas; laboratorio 72/72, B2 y operación real de las tres apps aprobados por el usuario el 03/11. Feedback con Auth UID en User `5bc3a83` (push pendiente al corte). Ver permisos en FIREBASE_SCHEMA §9. | Firebase + las tres apps |
+| I08 | Asignaciones hoy/futuro, múltiples turnos y exclusividad conductor/fecha. Integrado/publicado y desplegado desde `80a52bd`; no requiere redesplegar I08. | AdminWeb |
+| I08 (DriverApp) | Validación diaria `America/Lima` al montar/iniciar, respaldo offline acotado, identidad del recorrido. Validado, integrado y publicado: `67fa362`; docs `5735fa8`. | BurritoDriverApp |
 | I11 | Limpieza de datos personales en el panel (nombre/DNI) y limpieza del UID de Crashlytics al cerrar sesión o arrancar sin usuario. Implementado, probado, integrado y publicado (`4a05e41`). | BurritoDriverApp |
 
 ## 3. UX / UI Polishing — BurritoDriverApp
@@ -65,7 +72,7 @@ No requiere estar en el campus universitario.
 | Orden | Tarea | Proyecto | Depende de |
 |-------|-------|----------|------------|
 | 1 | ✅ T4.1: Heartbeat — setInterval(8000) para mantener timestamp fresco | DriverApp | T3.2 |
-| 2 | T5.3: Timeout Check — ocultar buses sin actualización >60s | UserApp | T4.1 |
+| 2 | ✅ Caducidad C4.6: oculta buses sin actualización a los 30 s; la propuesta histórica de 60 s no es trabajo pendiente | UserApp | T4.1 |
 | 3 | T4.2: Control de Turnos — botones INICIAR/FINALIZAR, creación de `/recorridos` | DriverApp | T4.1 |
 | 4 | T4.4: Multi-bus render completo — ShapeSource + SymbolLayer por cada bus activo | UserApp | T3.2 |
 | 5 | T4.5: Monitor de Flota — sección "Flota en servicio ahora" en el panel | AdminWeb | T4.4 |
@@ -95,6 +102,9 @@ universitario. Requiere presencia física en el campus.
 |-------|-----------|--------|
 | T1.2: Eliminar Debug Panel | `Map.tsx:255-262` | Congelada por orden del desarrollador hasta pre-producción |
 | T2.3: Asegurar Credenciales de Firma | `gradle.properties` en ambas apps | Diferida hasta empaquetar v1.2.0 |
+| I09 — Autorización GPS por asignación | FIREBASE_SCHEMA §9 | Postergada; no condiciona I03/I08 |
+| I10 — Heartbeat/antigüedad del fix GPS | PROJECT_CONTEXT | Postergada; conservar comportamiento aprobado |
+| P06 — Perfil incompatible | correciones_piloto_pruebas.md | Postergada; no reabrir automáticamente |
 
 ## 7. Visión de Largo Plazo
 

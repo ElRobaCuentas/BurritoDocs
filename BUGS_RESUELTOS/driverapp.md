@@ -623,9 +623,11 @@ Archivos:
 de etiqueta). No se agregaron estados, listeners ni dependencias.
 
 Estado:
-Corregido, validado físicamente y pendiente de integración/publicación
-(01/11/2026). Rama `feat/i08-asignaciones-diarias`; commit propio de Driver y
-commit documental independiente en `docs`.
+Corregido, validado físicamente, integrado y publicado. Driver `67fa362`
+está contenido en `main` y en GitHub; documentación `5735fa8` publicada en
+`docs/main`. Estado actualizado al 03/11/2026; se conserva la rama
+`feat/i08-asignaciones-diarias`. AdminWeb I08 ya integrado/publicado y
+desplegado desde `80a52bd`; no se requiere repetir el deploy de I08.
 - Primer APK offline falló con el síntoma anterior; se corrigió la ruta y se
   repitió el escenario con un APK nuevo, que inició, publicó tras reconectar
   y detuvo con `isActive=false` estable.
@@ -745,6 +747,24 @@ Referencias:
 - `DECISIONS.md` (ADR-029)
 - `PROJECT_CONTEXT.md` (§4 y §5)
 - `Driver/__tests__/SendCoordinates.logout.test.tsx` (punto 2.5, no forma parte de I11)
+
+### Regresión posterior de estabilización — 03/11/2026
+
+La auditoría posterior sobre Driver `9047dca` aprobó **120/120 pruebas
+versionadas en nueve suites**, excluyendo el test protegido no rastreado
+del punto 2.5. No confundir este total con las 120 del cierre histórico
+de I11 (107 versionadas + 13 del test no versionado). TypeScript aprobado;
+lint conserva `asignacionId` sin uso. El runner actual requiere incluir
+`react-native-vector-icons` además de Background Actions:
+
+```powershell
+node node_modules/jest/bin/jest.js --runInBand --testPathIgnorePatterns SendCoordinates.logout.test.tsx --transformIgnorePatterns 'node_modules/(?!((jest-)?react-native|@react-native(-community)?|react-native-background-actions|react-native-vector-icons)/)'
+```
+
+No se modifica código Driver ni se repiten H1 A/B. Hash Git del test
+protegido verificado intacto:
+`364561ad4b686c128ec69599ef4b47492f955160`.
+La jornada de ~8 h continúa pendiente.
 
 ---
 

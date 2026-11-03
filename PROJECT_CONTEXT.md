@@ -22,9 +22,10 @@ UserApp quedó 100% estudiante; el panel admin se separó de la app móvil
 en **AdminWeb** (SPA web), y la DriverApp quedó exclusiva de conductores
 (ADR-025).
 
-Las siguientes iteraciones se enfocan en funcionalidades de flota
-(heartbeat, timeout, turnos, render multi-marcador, monitor, estadísticas,
-geofencing y smoothing) descritas en MVP.md y ROADMAP.md.
+La prioridad actual es estabilizar el MVP y validar una jornada de
+aproximadamente ocho horas con un bus y teléfono controlados. Heartbeat,
+caducidad y asignaciones diarias ya existen; las ampliaciones de flota,
+monitor, estadísticas, geofencing y smoothing permanecen Post-MVP.
 
 ### BurritoDriverApp
 
@@ -120,10 +121,27 @@ de administración (conductores, buses, asignaciones).
   nombre, DNI ni prefijo del DNI. Crashlytics recibe el UID con sesión y
   `setUserId('')` cuando Auth informa usuario nulo. Los diagnósticos
   operativos y los errores con stack trace se conservan.
+- **I03/I04 (03/11/2026)**: reglas publicadas y operación real aprobada por
+  el usuario: AdminWeb administra; BurritoDriverApp autentica, carga la
+  asignación e inicia/detiene GPS; El Burrito muestra el bus y envía feedback
+  con Auth UID. Laboratorio previo: 72/72 pruebas y B2 funcional. No se
+  repitió Firebase real en esta fase. El código I04 está en User `5bc3a83`,
+  con push aún pendiente al corte previo a integración.
+- **I06-B (03/11/2026)**: recepción rechaza timestamps explícitos mayores
+  que hora local de recepción + 300 000 ms. User: 124/124 tests en diez
+  suites, incluidos límites y pipeline real servicio → store. Corrección
+  local verificada en `fix/i06-future-timestamps` (`011a4b6`), aún sin
+  integración/publicación ni APK nuevo.
+- **Foco AdminWeb (03/11/2026)**: efectos de apertura y Escape separados en
+  `Modal.tsx`; lint, TypeScript, bundle en memoria y 12 comprobaciones de
+  efectos React con DOM simulado aprobados. Verificación visual en navegador
+  pendiente; commit local `5e66d46` en `fix/modal-focus`, aún sin
+  integrar/publicar/desplegar.
+- **Caducidad C4.6:** los buses sin actualización válida se ocultan a los
+  30 s; no falta implementar otro timeout para cerrar el MVP.
 
-### Funcionalidades pendientes (ver MVP.md y ROADMAP.md)
+### Funcionalidades Post-MVP (ver MVP.md y ROADMAP.md)
 
-- Timeout check (ocultar buses fantasma tras inactividad — T5.3).
 - Control de turnos (inicio/fin de recorrido — T4.2).
 - Render multi-marcador completo en el mapa (T4.4).
 - Monitor de flota en panel admin (T4.5).
@@ -134,6 +152,25 @@ de administración (conductores, buses, asignaciones).
 
 ## 5. Limitaciones Actuales
 
+- **I06-A (decisión 30/10, ratificada 03/11/2026):** campos ausentes/null
+  conservan coordenadas `0` y timestamp `Date.now()`, incluso en activos.
+  Es una limitación aceptada del MVP con emisor conocido; las pruebas GPS
+  normales recibieron coordenadas completas. No equivale a validar todo
+  registro incompleto ni a un defecto nuevo descubierto por la auditoría.
+- **Relojes I06-B:** cinco minutos son una tolerancia autorizada, no una
+  medición de precisión ni sincronización de relojes. Adelantos dentro del
+  margen pueden retrasar datos posteriores y caducidad; un desfase mayor
+  persistente hace que se descarten publicaciones (también detenciones).
+  La posición previa caduca con el mecanismo existente. No hay corrección
+  retroactiva de datos aceptados por un proceso anterior a este cambio.
+- **Cierre operativo:** falta la jornada de ~8 h con pantalla bloqueada,
+  movimiento/paradas, relevos y pérdida/recuperación de red. Las pruebas
+  unitarias y las comprobaciones físicas cortas no la acreditan. I09/I10 y
+  P06 siguen postergadas; I07 y el logout aceptado no se reabren.
+- **Estado de esta fase:** correcciones I06-B/foco y documentación pendientes
+  de revisión previa a integrar/push. B2 aislado en `dc58daf`; test protegido
+  de Driver intacto y sin versionar. Graphify diferido por decisión expresa
+  hasta después de sincronizar GitHub, con autorización posterior propia.
 - **Ciclo de vida GPS (I07, 01/11/2026)**: corregido funcionalmente y
   validado e integrado/publicado en `Driver/main` (`9faaaf9`); documentación
   técnica integrada/publicada mediante `docs/main` (`d5c4d48`). H1 A/B y la regresión de
@@ -148,8 +185,9 @@ de administración (conductores, buses, asignaciones).
   GPS completos simultáneos en Android. No se extrapola a una jornada de 8 h.
   Ver `BUGS_RESUELTOS/driverapp.md` (CASO 020) y `ARCHITECTURE.md` §8.
 - **Respaldo offline de la asignación (I08, 01/11/2026)**: implementado y
-  validado físicamente en la rama `feat/i08-asignaciones-diarias`;
-  pendiente de integración/publicación. El respaldo vive solo en memoria
+  validado físicamente; integrado/publicado en `Driver/main` (`67fa362`,
+  documentación `5735fa8`). AdminWeb I08 integrado/publicado y desplegado
+  desde `80a52bd`, según la validación previa de Hosting. El respaldo vive solo en memoria
   (no sobrevive al proceso ni al cambio de día) y no detecta altas,
   cancelaciones ni reasignaciones administrativas ocurridas offline. Solo
   se habilita con `.info/connected == false`, no con un timeout aislado.
@@ -162,6 +200,8 @@ de administración (conductores, buses, asignaciones).
   reportes. La limpieza no elimina reportes históricos ni sanitiza objetos de
   error. No hay una cola que garantice el orden nativo de `setUserId`. Ver
   `BUGS_RESUELTOS/driverapp.md` (CASO 022) y ADR-029.
+  Integrado/publicado en Driver `4a05e41` y docs `1689a7a`; no implica una
+  prueba de recepción nativa de telemetría.
 - **Precisión GPS**: el campus de la UNMSM produce interferencia
   estructural (efecto multipath) con márgenes de error de ±10–15 metros.
 - **Dependencia de red móvil**: la sincronización en tiempo real requiere

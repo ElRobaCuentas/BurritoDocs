@@ -190,6 +190,13 @@ sesión y la expone vía `SessionContext`/`useSession`. Las pantallas se
 componen con las primitivas de `shared/ui/`; las confirmaciones usan
 `ConfirmDialog` (no `window.confirm`) y los avisos, toasts.
 
+El efecto de apertura de `Modal.tsx` depende solo de `open`: enfoca el
+diálogo y bloquea el scroll hasta cerrar/desmontar. Escape se registra en
+otro efecto con `[open, onClose]`, para utilizar el callback vigente sin
+robar el foco al editar inputs (corrección 03/11/2026; ver
+`BUGS_RESUELTOS/adminweb.md`). Los cambios B2 de emuladores se preservan
+exclusivamente en `test/b2-adminweb-emulator` (`dc58daf`), fuera de `main`.
+
 ### Módulo Admin
 
 Accesible solo para usuarios cuyo `auth.uid` existe en
@@ -368,9 +375,11 @@ MapService.subscribeToBusLocations()  ← se suscribe a /ubicacion_buses
     ↓
 ref.on('value', callback)            ← Firebase empuja deltas
     ↓
+I06: validación por entrada; I06-B descarta timestamp > recepción + 300 000 ms
+    ↓
 Callback recibe Record<string, BurritoLocation> { placa1: {lat, lng, speed, ...}, placa2: {...}, ... }
     ↓
-Filtro dedup por placa (timestamp > actual por cada bus)
+Filtro dedup por placa (timestamp > actual; también activo → inactivo con timestamp igual, I05)
     ↓
 C4.6 EXPERIMENTAL — estrategia C (decide EN MOVIMIENTO/EN PARADERO):
     dist = Haversine(pos previa, pos nueva)
@@ -401,6 +410,34 @@ clearInterval(onlineInterval de 2s)          ← se libera el ciclo de vida
     ↓
 0 listeners / 0 intervalos activos (sin consumo residual)
 ```
+
+**Alcance I06 (03/11/2026):** el receptor rechaza valores explícitamente
+incorrectos de coordenadas, timestamp e `isActive`. **I06-A es una limitación
+aceptada**, según la decisión del 30/10: campos ausentes/null conservan los
+respaldos de coordenadas `0` y timestamp `Date.now()`. No se rechazan todos
+los registros incompletos. Las detenciones sin coordenadas válidas conservan
+la posición previa y pasan a offline; se mantiene I05.
+
+**I06-B:** `MapService` toma una hora de recepción por snapshot y rechaza
+timestamps explícitos mayores que esa hora + **300 000 ms** (límite inclusivo
+aceptado). No los recorta ni los entrega al store; la última ubicación válida
+y su caducidad se conservan. Así una fecha de mañana no contamina el filtro
+de orden temporal ni bloquea la siguiente ubicación correcta. El margen de
+cinco minutos fue autorizado para tolerar diferencias de reloj; no deriva
+del heartbeat. La latencia de red envejece una publicación, no la adelanta.
+No sincroniza relojes: un receptor atrasado puede rechazar datos legítimos,
+y un adelanto dentro del margen todavía puede retrasar actualizaciones o la
+caducidad. GPS, heartbeat, watchdog, movimiento y deduplicación no cambian.
+Ver ADR-030 y `BUGS_RESUELTOS/userapp.md` (CASO 019).
+
+**Feedback I04:** `CustomDrawer` obtiene el UID de Firebase Auth y
+`MapService.sendFeedback()` lo contrasta con la sesión vigente antes de
+crear un hijo mediante `push().set()`, con timestamp del servidor. Las
+reglas publicadas exigen creación con UID propio y rating entero 1–5;
+deniegan editar/borrar comentarios. Los permisos I03 de conductores y
+asignaciones, compatibles con la consulta I08 por `choferId`, se detallan
+en `FIREBASE_SCHEMA.md` §9. Publicación y validación real informadas por el
+usuario el 03/11/2026; no repetidas durante esta corrección.
 
 ### Flujo de autenticación (DriverApp — conductor)
 

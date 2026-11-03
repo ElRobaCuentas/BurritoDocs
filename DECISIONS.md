@@ -1448,6 +1448,53 @@ ADR-026, Driver commit `4a05e41`.
 
 ---
 
+### ADR-030: Tolerancia de cinco minutos para timestamps futuros de recepción (I06-B)
+
+**Estado:** Aceptada por el usuario el 03/11/2026; implementada y probada
+localmente, pendiente de integración/publicación al corte de esta fase.
+
+**Contexto:** el 30/10 se decidió conservar los respaldos para campos ausentes
+(I06-A), validar valores explícitamente incorrectos y diferir timestamps
+futuros. La auditoría reprodujo una fecha de mañana aceptada por el receptor
+que impedía aceptar publicaciones posteriores correctas por deduplicación.
+No son dos defectos nuevos: I06-A sigue siendo una limitación aceptada y
+I06-B era un riesgo pendiente ahora reproducido.
+
+**Decisión:** en `MapService`, rechazar timestamps explícitos mayores que
+`receivedAt + 300_000` (ms), capturando la hora local una vez por snapshot.
+El límite exacto se acepta. El usuario autorizó cinco minutos para tolerar
+desfase entre relojes; no es un umbral derivado de los 8 s del heartbeat.
+La latencia de red vuelve antigua una publicación, no futura.
+Se conserva íntegramente el respaldo de timestamp y coordenadas ausentes.
+La validación se aplica también a detenciones; los datos rechazados no
+entran al store ni renuevan la caducidad. No cambian GPS, heartbeat,
+watchdog, estrategia de movimiento ni filtro de orden temporal.
+
+**Alternativas consideradas:** 60 s sin justificación (descartado);
+normalizar fechas excesivamente futuras a «ahora» (descartado porque
+inventaría frescura); sincronizar con reloj de servidor o cambiar el emisor
+(fuera del alcance mínimo autorizado); mantener el comportamiento anterior
+(descartado antes de la jornada prolongada).
+
+**Consecuencias:** evita envenenar el store con fechas como «mañana».
+No garantiza sincronización de relojes ni resuelve saltos hacia atrás dentro
+del margen. Un adelanto aceptado puede prolongar frescura/bloquear datos
+por hasta el margen; un reloj receptor atrasado puede descartar publicaciones
+legítimas. Un desfase persistente mayor puede impedir recibir incluso una
+detención, dejando la última posición hasta su caducidad existente. Se
+requiere un proceso actualizado; no se sanea retroactivamente un store
+anterior. La aceptación operativa de ~8 h sigue pendiente.
+
+**Verificación:** once pruebas nuevas (límites inclusivo/+1 ms, +24 h,
+activos/inactivos, aislamiento entre placas, I06-A y dos secuencias del
+pipeline real servicio → store). User 124/124 en diez suites; TypeScript
+aprobado y lint sin deuda nueva (21 errores/50 warnings globales previos).
+
+**Referencias:** ARCHITECTURE.md §5; FIREBASE_SCHEMA.md §3;
+PROJECT_CONTEXT.md §5; BUGS_RESUELTOS/userapp.md (CASO 019).
+
+---
+
 ## Referencias
 
 | Documento | Relación |
