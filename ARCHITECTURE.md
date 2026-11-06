@@ -151,10 +151,9 @@ src/
 │   └── AdminNavigator.tsx           # Rutas del panel (renderizadas dentro del AppShell)
 ├── features/admin/
 │   ├── screen/
-│   │   ├── AdminPanelScreen.tsx     # Dashboard: métricas de hoy + accesos a módulos
 │   │   ├── ChoferesScreen.tsx       # Gestión de conductores (crear, editar, activar/desactivar)
 │   │   ├── BusesScreen.tsx          # CRUD de buses
-│   │   ├── AsignacionesScreen.tsx   # Asignaciones por fecha (hoy/futuro) con uno o varios turnos
+│   │   ├── AsignacionesScreen.tsx   # Formulario y listado por fecha, editar horarios
 │   │   └── AdminsScreen.tsx         # Gestión de administradores
 │   ├── components/
 │   │   └── TurnosEditor.tsx         # Editor reutilizable de turnos
@@ -182,9 +181,9 @@ src/
 ### Interfaz (sistema de diseño)
 
 La interfaz usa CSS propio con **tokens** (sin dependencias de UI). `index.css`
-importa las hojas de `src/styles/`; la paleta es "Operations Blue" (primario
-`#2563EB`, complementario `#06B6D4`, sidebar `#0F172A`, fondo `#F8FAFC`, solo
-tema claro). El **AppShell** (`shared/layout/AppShell.tsx`) aporta sidebar +
+importa las hojas de `src/styles/`; usa cian `#00AEEF`, gris `#F5F5F5`,
+fondo blanco y texto `#222222` en tema claro.
+El **AppShell** (`shared/layout/AppShell.tsx`) aporta sidebar +
 topbar en escritorio y drawer en móvil, muestra la identidad del admin en
 sesión y la expone vía `SessionContext`/`useSession`. Las pantallas se
 componen con las primitivas de `shared/ui/`; las confirmaciones usan
@@ -226,7 +225,7 @@ de verdad del auth gate de AdminWeb.
 
 ```
 Login → (sesión) → estado "checking" mientras existeAdministrador(uid)?
-    ├── nodo existe      → AdminNavigator (AdminPanelScreen → Choferes / Buses / Asignaciones / Admins)
+    ├── nodo existe      → AdminNavigator (Asignaciones / Choferes / Buses / Admins)
     ├── PERMISSION_DENIED → "No autorizado" (Cerrar Sesión)
     └── timeout / red     → "No se pudo verificar tu cuenta" (Reintentar / Cerrar Sesión)
 ```
@@ -542,10 +541,9 @@ Admin crea admin:
 | `src/shared/ui/*` | Primitivas de UI y overlays (Button, Field, Card, Modal, Toast, Icon…) |
 | `src/features/admin/services/admin_service.ts` | CRUD (Auth temporal + RTDB) |
 | `src/features/admin/services/admin_check.ts` | `existeAdministrador(uid)` con timeout |
-| `src/features/admin/screen/AdminPanelScreen.tsx` | Dashboard: métricas de hoy + accesos a módulos |
 | `src/features/admin/screen/ChoferesScreen.tsx` | Gestión de conductores (crear, editar, activar/desactivar) |
 | `src/features/admin/screen/BusesScreen.tsx` | CRUD de buses |
-| `src/features/admin/screen/AsignacionesScreen.tsx` | Asignaciones por fecha (hoy/futuro) con uno o varios turnos |
+| `src/features/admin/screen/AsignacionesScreen.tsx` | Formulario y listado por fecha, editar horarios |
 | `src/features/admin/screen/AdminsScreen.tsx` | Gestión de administradores |
 | `src/features/admin/components/TurnosEditor.tsx` | Editor reutilizable de turnos |
 | `src/features/admin/utils/turno.ts` | Modelo, validación y formato de turnos |
