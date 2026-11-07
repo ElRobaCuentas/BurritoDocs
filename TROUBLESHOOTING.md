@@ -355,7 +355,6 @@ actual del proyecto, planificadas en fases futuras del roadmap.
 | Etiqueta «Servicio de ubicación activo» | Describe el servicio Android local en ejecución; no confirma publicación en RTDB ni distingue conectado/desconectado. Decisión de MVP en I08 (ADR-028). |
 | Exposición histórica de la contraseña de firma de release | La contraseña quedó expuesta en el historial de Git. El keystore de release no se encontró en el historial auditado y no hay evidencia identificada de uso indebido. La configuración de firma actual se conserva. No se ha decidido rotar la clave; la decisión se reevaluará si aparecen evidencias de compromiso o cambian las condiciones de riesgo. |
 | Corte de red **durante** la sesión: Firebase no dispara `onError`; en DriverApp la recuperación depende del heartbeat T4.1 (catch-reset) y en UserApp el bus caducado se oculta por expiración de timestamp (estrategia C) | Atenuado por C4.6+T4.1 (22/08); escenario obligatorio del checklist de T1 |
-| El icono/marca del menú lateral usa el placeholder por defecto de react-navigation; el logo oficial solo llega al splash y al launcher | Por resolver (rebranding incompleto) |
 
 ## 11. Referencias
 
