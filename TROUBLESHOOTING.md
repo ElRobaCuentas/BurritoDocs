@@ -345,7 +345,7 @@ actual del proyecto, planificadas en fases futuras del roadmap.
 | I06-A: campos ausentes/null se normalizan a coordenadas 0 y timestamp actual | Limitación aceptada el 30/10 y ratificada el 03/11; no afirmar rechazo de todo registro incompleto |
 | I06-B: desfase de relojes | Se rechaza adelanto >5 min; dentro del margen sigue pudiendo retrasar datos/caducidad. Corrección local probada, publicación/APK pendientes |
 | Foco de modales AdminWeb | Corrección local en Modal.tsx; verificaciones técnicas aprobadas, comprobación visual en navegador pendiente. Ver BUGS_RESUELTOS/adminweb.md |
-| Regresión posterior al corte 03/11 | User 124/124 (10 suites) tras I06-B; Driver 120/120 versionadas (9 suites) en auditoría previa, sin test protegido. TypeScript aprobado; lint User 21 errores/50 warnings previos, Driver 1 error previo. No es evidencia de jornada completa |
+| Regresión posterior al corte 03/11 | User 124/124 (10 suites) tras I06-B; Driver 120/120 versionadas (9 suites) en auditoría previa, sin test protegido. TypeScript aprobado; deuda de lint de UserApp registrada en [LINT_DEBT.md](LINT_DEBT.md), Driver 1 error previo. No es evidencia de jornada completa |
 | La UserApp muestra un solo bus (multi-bus no implementado) | Planificado (Fase 1) |
 | No hay geofencing ni cierre automático de vueltas | Planificado (Fase 2) |
 | iOS no soportado para DriverApp | Limitación de plataforma |
@@ -355,6 +355,7 @@ actual del proyecto, planificadas en fases futuras del roadmap.
 | Etiqueta «Servicio de ubicación activo» | Describe el servicio Android local en ejecución; no confirma publicación en RTDB ni distingue conectado/desconectado. Decisión de MVP en I08 (ADR-028). |
 | Exposición histórica de la contraseña de firma de release | La contraseña quedó expuesta en el historial de Git. El keystore de release no se encontró en el historial auditado y no hay evidencia identificada de uso indebido. La configuración de firma actual se conserva. No se ha decidido rotar la clave; la decisión se reevaluará si aparecen evidencias de compromiso o cambian las condiciones de riesgo. |
 | Corte de red **durante** la sesión: Firebase no dispara `onError`; en DriverApp la recuperación depende del heartbeat T4.1 (catch-reset) y en UserApp el bus caducado se oculta por expiración de timestamp (estrategia C) | Atenuado por C4.6+T4.1 (22/08); escenario obligatorio del checklist de T1 |
+| Deuda de lint de UserApp | Pendiente post-MVP; sin fallos funcionales confirmados. Inventario, análisis y condiciones de revisión en [LINT_DEBT.md](LINT_DEBT.md) |
 
 ## 11. Referencias
 
