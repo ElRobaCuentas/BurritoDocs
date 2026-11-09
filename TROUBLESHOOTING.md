@@ -279,7 +279,7 @@ según el mecanismo existente. Ver ADR-030 y CASO 019 de userapp.md.
 | Causa | La DriverApp perdió conexión de red, o el conductor cerró la app sin presionar "DETENER" |
 | Diagnóstico | Verificar el timestamp de la última actualización en Firebase RTDB para `/ubicacion_buses/{busId}` |
 | Solución | La UserApp clasifica el bus como `offline` si el timestamp supera 30s (`BUS_STALE_AFTER_MS`, C4.6) o si `isActive === false` en RTDB, y no lo muestra. Con timestamp reciente y datos utilizables, la decisión EN MOVIMIENTO/EN PARADERO usa la estrategia C experimental (C4.6): distancia + Δt + speed condicional + memoria de estado (2 parejas consecutivas sin evidencia → PARADERO), con parámetros de CALIBRACIÓN PENDIENTE. El desplazamiento mínimo de 8 m (`MOVEMENT_THRESHOLD_M`, estrategia A) ya NO decide el estado en vivo: se conserva únicamente para comparación offline A vs C. En el primer snapshot usa fallback de edad (12s) |
-| Prevención | El heartbeat del Driver (T4.1, ADR-019) ya elimina las pausas del GPS con bus quieto. Timeout check automático (Fase 4 del roadmap) proporcionará una solución más robusta para cierres abruptos |
+| Prevención | El heartbeat del Driver (T4.1, ADR-019) ya elimina las pausas del GPS con bus quieto. La antigua referencia a un timeout check automático en «Fase 4» no corresponde a una tarea vigente de ROADMAP.md; C4.6 oculta datos caducados, pero no garantiza cierre remoto automático (ADR-026) |
 
 ## 8. Mapbox
 
@@ -338,7 +338,7 @@ según el mecanismo existente. Ver ADR-030 y CASO 019 de userapp.md.
 ## 10. Problemas conocidos
 
 Los siguientes items **no son errores**. Son limitaciones del estado
-actual del proyecto, planificadas en fases futuras del roadmap.
+actual del proyecto. La planificación futura, cuando corresponde, está en ROADMAP.md.
 
 | Problema | Estado |
 |----------|--------|
@@ -346,8 +346,8 @@ actual del proyecto, planificadas en fases futuras del roadmap.
 | I06-B: desfase de relojes | Se rechaza adelanto >5 min; dentro del margen sigue pudiendo retrasar datos/caducidad. Corrección local probada, publicación/APK pendientes |
 | Foco de modales AdminWeb | Corrección local en Modal.tsx; verificaciones técnicas aprobadas, comprobación visual en navegador pendiente. Ver BUGS_RESUELTOS/adminweb.md |
 | Regresión posterior al corte 03/11 | User 124/124 (10 suites) tras I06-B; Driver 120/120 versionadas (9 suites) en auditoría previa, sin test protegido. TypeScript aprobado; deuda de lint de UserApp registrada en [LINT_DEBT.md](LINT_DEBT.md), Driver 1 error previo. No es evidencia de jornada completa |
-| La UserApp muestra un solo bus (multi-bus no implementado) | Planificado (Fase 1) |
-| No hay geofencing ni cierre automático de vueltas | Planificado (Fase 2) |
+| La UserApp muestra un solo bus (multi-bus no implementado) | Ver ROADMAP.md (T4.4) |
+| No hay geofencing ni cierre automático de vueltas | Ver ROADMAP.md (T4.3) |
 | iOS no soportado para DriverApp | Limitación de plataforma |
 | Regresión de DriverApp al cierre I07 | Reportada el 01/11/2026: 64/64 tests, cinco suites; el wrapper real requiere el flag transformIgnorePatterns documentado en CASO 020, sin cambiar jest.config.js. Lint global falla por asignacionId unused preexistente en SendCoordinates.tsx:277:12; TSC y ESLint de los cinco tests: exit 0. |
 | Regresión de DriverApp al cierre I08 | Reportada el 01/11/2026: 97/97 tests, seis suites (64 de I07 + 33 de I08). `tsc --noEmit`, ESLint de los tests y `git diff --check`: exit 0. `npm run lint` global conserva el único error preexistente `asignacionId` unused en `SendCoordinates.tsx`; no se corrigió. |
@@ -365,7 +365,7 @@ actual del proyecto, planificadas en fases futuras del roadmap.
 | `PROJECT_CONTEXT.md` | Visión general, limitaciones del sistema. |
 | `ARCHITECTURE.md` | Flujo de datos, ciclo de vida del tracking. |
 | `FIREBASE_SCHEMA.md` | Estructura de nodos, payloads e índices de la RTDB. |
-| `ROADMAP.md` | Fases y prioridades para resolver problemas conocidos. |
+| `ROADMAP.md` | Planificación post-MVP, postergaciones y condiciones de pre-release. |
 | `DECISIONS.md` | Decisiones de arquitectura (persistence, serverless, etc.). |
 | Driver/README.md | Setup y requisitos de DriverApp. |
 | User/README.md | Setup y requisitos de UserApp. |

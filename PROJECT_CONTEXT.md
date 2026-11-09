@@ -140,15 +140,10 @@ de administración (conductores, buses, asignaciones).
 - **Caducidad C4.6:** los buses sin actualización válida se ocultan a los
   30 s; no falta implementar otro timeout para cerrar el MVP.
 
-### Funcionalidades Post-MVP (ver MVP.md y ROADMAP.md)
+### Planificación posterior al MVP
 
-- Control de turnos (inicio/fin de recorrido — T4.2).
-- Render multi-marcador completo en el mapa (T4.4).
-- Monitor de flota en panel admin (T4.5).
-- Estadísticas de recorridos (T4.6).
-- Geofencing con cierre automático de vueltas (T4.3).
-- Smoothing de interpolación visual (T5.2).
-- Calibración de paraderos en campus (T5.1).
+Las tareas, estados y dependencias viven únicamente en `ROADMAP.md`.
+El alcance y cierre del MVP se consultan en `../MVP.md`.
 
 ## 5. Limitaciones Actuales
 
@@ -165,8 +160,8 @@ de administración (conductores, buses, asignaciones).
   retroactiva de datos aceptados por un proceso anterior a este cambio.
 - **Cierre operativo:** falta la jornada de ~8 h con pantalla bloqueada,
   movimiento/paradas, relevos y pérdida/recuperación de red. Las pruebas
-  unitarias y las comprobaciones físicas cortas no la acreditan. I09/I10 y
-  P06 siguen postergadas; I07 y el logout aceptado no se reabren.
+  unitarias y las comprobaciones físicas cortas no la acreditan. Para I09/I10
+  y P06, ver `ROADMAP.md` (Tareas postergadas); I07 y el logout aceptado no se reabren.
 - **Estado de esta fase:** correcciones I06-B/foco y documentación pendientes
   de revisión previa a integrar/push. B2 aislado en `dc58daf`; test protegido
   de Driver intacto y sin versionar. Graphify diferido por decisión expresa
@@ -209,7 +204,7 @@ de administración (conductores, buses, asignaciones).
 - **Solo Android para conducción**: el Foreground Service que mantiene
   la transmisión activa está implementado sobre APIs nativas de Android.
   DriverApp no está probada ni soportada en iOS.
-- **Render de un solo marcador**: el backend multi-bus ya está implementado (T3.1), pero la UI del mapa aún muestra un único marcador (seleccionando el bus activo más reciente). El render multi-marcador completo está planificado en T4.4.
+- **Render de un solo marcador**: el backend multi-bus ya está implementado (T3.1), pero la UI del mapa aún muestra un único marcador (seleccionando el bus activo más reciente). La tarea de render multi-marcador es T4.4; su planificación vive en `ROADMAP.md`.
 - **Bootstrap del primer admin manual**: crear el **primer** administrador
   requiere ir a Firebase Console, crear la cuenta Auth y registrar su UID en
   `/administradores/{uid}`. Los siguientes administradores se crean desde el
@@ -221,7 +216,7 @@ de administración (conductores, buses, asignaciones).
 |-----------|-----------|
 | `ARCHITECTURE.md` | Flujo de datos, componentes y ciclo de vida. |
 | `FIREBASE_SCHEMA.md` | Estructura de nodos, payloads e índices de la RTDB. |
-| `ROADMAP.md` | Tareas pendientes, fases y prioridades. |
+| `ROADMAP.md` | Planificación posterior al MVP, postergaciones y condiciones de pre-release. |
 | `TROUBLESHOOTING.md` | Historial de bugs, síntomas y soluciones. |
 | `DECISIONS.md` | Registro de decisiones de arquitectura (ADR). |
 | Driver/README.md | Setup y funcionalidad de la app del conductor. |

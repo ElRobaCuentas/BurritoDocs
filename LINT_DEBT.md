@@ -382,7 +382,7 @@ Notas:
 | `TROUBLESHOOTING.md` §10 | Problemas conocidos; enlaza a este registro. |
 | `BUGS_RESUELTOS/userapp.md` | Cierre de hallazgos resueltos. |
 | `PROJECT_CONTEXT.md` §5 | Limitaciones actuales del sistema. |
-| `../MVP.md` | Backlog oficial y regla de postergación. |
-| `../POST_MVP.md` | Deuda técnica y fases posteriores al piloto. |
+| `../MVP.md` | Alcance, cierre del MVP y regla de postergación. |
+| `ROADMAP.md` | Planificación posterior al piloto y referencia al inventario de deuda técnica. |
 | `GRAPHIFY.md` | Procedimiento de actualización del grafo. |
 | `../User/AGENTS.md` §7 | Enrutado de cambios documentales. |

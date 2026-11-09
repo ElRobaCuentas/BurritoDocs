@@ -87,7 +87,7 @@ intermedias.
 - Acoplamiento al ecosistema Firebase. Cambiar de base de datos en el
   futuro requeriría reescribir la capa de comunicación.
 
-**Referencias:** ARCHITECTURE.md (sección 1 y 2), ROADMAP.md (Fase 5).
+**Referencias:** ARCHITECTURE.md (sección 1 y 2), ROADMAP.md (Visión futura sin aprobación de ejecución).
 
 ---
 
@@ -336,7 +336,7 @@ empezar y "DETENER TODO" para finalizar. Al detener, se escribe
   en RTDB. La UserApp mitiga esto clasificando ubicaciones como
   "offline" cuando el timestamp expira (30s, C4.6) o "stopped" cuando
   no hay desplazamiento entre publicaciones (burritoLocationStore).
-- Timeout check automático está planificado en Fase 4 del roadmap.
+- La referencia histórica a un timeout check automático en «Fase 4» no corresponde a una tarea vigente de ROADMAP.md. La mitigación por caducidad es C4.6; no acredita cierre remoto automático (ADR-026).
 
 **Nota de transición (ADR-026):** este ADR describía una acción compuesta
 ("DETENER TODO" = `isActive:false` + `signOut`). La decisión vigente separa
@@ -344,7 +344,7 @@ ambas operaciones: "DETENER RECORRIDO" detiene la transmisión y escribe
 `isActive:false`; "Cerrar sesión" es una acción independiente. El término
 "DETENER TODO" queda retirado como concepto vigente. Ver ADR-026.
 
-**Referencias:** ARCHITECTURE.md (sección 8), ROADMAP.md (Fase 4), ADR-026.
+**Referencias:** ARCHITECTURE.md (sección 8), ROADMAP.md (Planificación post-MVP), ADR-026.
 
 ---
 
@@ -481,7 +481,7 @@ por bus en T4.4.
   `Map.tsx`, `MapBranding.tsx` (derivación de primer bus activo).
 
 **Referencias:** ARCHITECTURE.md (sección 4 y 5), FIREBASE_SCHEMA.md
-(secciones 3 y 7), MVP.md (T3.1, T4.4).
+(secciones 3 y 7), ROADMAP.md (prerrequisito T3.1 y tarea T4.4).
 
 ---
 
@@ -709,9 +709,9 @@ activa.
 - Un radio menor (20m) provocaba cierres falsos por imprecisión del
   GPS. Un radio mayor podría causar cierres prematuros.
 
-**Dependencia:** requiere tracking consolidado (Fase 1 del roadmap).
+**Dependencia:** requiere tracking consolidado; ver ROADMAP.md (prerrequisitos de tracking y dependencia T4.2 de T4.3).
 
-**Referencias:** ROADMAP.md (Fase 2).
+**Referencias:** ROADMAP.md (T4.3).
 
 ---
 
@@ -733,7 +733,7 @@ y la base de datos.
 
 **Dependencia:** sin fecha estimada. Visión de largo plazo.
 
-**Referencias:** ROADMAP.md (Visión de Largo Plazo).
+**Referencias:** ROADMAP.md (Visión futura sin aprobación de ejecución).
 
 ---
 
@@ -760,7 +760,7 @@ Firebase RTDB (o del backend propio, cuando exista) para proporcionar:
 
 **Dependencia:** sin fecha estimada. Visión de largo plazo.
 
-**Referencias:** ROADMAP.md (Visión de Largo Plazo).
+**Referencias:** ROADMAP.md (Visión futura sin aprobación de ejecución).
 
 ---
 
@@ -828,7 +828,7 @@ actualización publicada por el Driver", no "momento del fix GPS".
   que el heartbeat publica realmente con el GPS quieto.
 
 **Referencias:** ARCHITECTURE.md (sección 5 y 8), FIREBASE_SCHEMA.md
-(sección 3), ROADMAP.md (Bloque A).
+(sección 3), ROADMAP.md (prerrequisito T4.1).
 
 ---
 
@@ -1038,8 +1038,9 @@ mantiene intacta (requisito funcional de UserApp).
   backfilleado (44332211).
 
 **Referencias:** FIREBASE_SCHEMA.md (§2 claves primarias, §4 nodo
-`/choferes_uids`, §9 modelo de autorización), MVP.md (§3 Seguridad,
-Bloque 2 S3).
+`/choferes_uids`, §9 modelo de autorización), ADR-017. La referencia histórica
+«Bloque 2 S3» identificaba autorización RTDB por UID, no la rotación de firma
+S3 de ROADMAP.md.
 
 ---
 
@@ -1122,7 +1123,7 @@ Razones:
   administrativas al MVP; el siguiente hito es E2E de campo.
 
 **Referencias:** FIREBASE_SCHEMA.md (§4 nodo `/asignaciones`),
-MVP.md (§4 W12).
+ROADMAP.md (Condiciones de pre-release y publicación, W12); MVP.md (§1, riesgo del piloto).
 
 ---
 
@@ -1258,7 +1259,7 @@ expiración de timestamp en la UserApp. **El sistema no garantiza que
 `isActive` refleje el estado real del bus.**
 
 **Referencias:** ARCHITECTURE.md (sección 8), FIREBASE_SCHEMA.md (sección 4),
-SendCoordinates.tsx, ROADMAP.md (UX-01), ADR-010.
+SendCoordinates.tsx (separación stopProcess/signOut; antecedente histórico UX-01), ADR-010.
 
 ---
 
@@ -1314,8 +1315,8 @@ una relación N:N que la DriverApp actual no sabe interpretar.
   diseñar otra fase con cambios en el modelo y en DriverApp.
 
 **Referencias:** ARCHITECTURE.md (sección AdminWeb), FIREBASE_SCHEMA.md
-(`/asignaciones`), AdminWeb/AGENTS.md (§6.5 y §6.14), ROADMAP.md (I08),
-ADR-024, ADR-026.
+(`/asignaciones`), AdminWeb/AGENTS.md (§6.5 y §6.14),
+ADR-024, ADR-026, ADR-028 (I08 en BurritoDriverApp).
 
 ---
 
@@ -1502,7 +1503,7 @@ PROJECT_CONTEXT.md §5; BUGS_RESUELTOS/userapp.md (CASO 019).
 | `ARCHITECTURE.md` | Flujo de datos, ciclo de vida y componentes. |
 | `FIREBASE_SCHEMA.md` | Estructura de nodos impactada por estas decisiones. |
 | `TROUBLESHOOTING.md` | Problemas derivados de estas decisiones. |
-| `ROADMAP.md` | Fases donde se ejecutarán las ADR planificadas. |
+| `ROADMAP.md` | Planificación post-MVP y referencias a las ADR planeadas. |
 | `BUGS_RESUELTOS/` | Bugs resueltos que originaron decisiones arquitectónicas. |
 | `User/README.md` | Setup y funcionalidad de UserApp. |
 | `Driver/README.md` | Setup y funcionalidad de DriverApp. |

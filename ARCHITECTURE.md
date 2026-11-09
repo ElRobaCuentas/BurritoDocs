@@ -811,8 +811,8 @@ Android 14 acepte el servicio:
 
 ### Geofencing
 
-- Actualmente la arquitectura no incorpora geofencing. Su incorporación
-  está contemplada en futuras iteraciones del roadmap.
+- Actualmente la arquitectura no incorpora geofencing. Su planificación
+  está en ROADMAP.md (T4.3).
 
 ### Índices de RTDB
 
@@ -848,7 +848,7 @@ Android 14 acepte el servicio:
 |-----------|----------|
 | `PROJECT_CONTEXT.md` | Visión general del ecosistema, propósito y estado. |
 | `FIREBASE_SCHEMA.md` | Estructura detallada de nodos, payloads e índices de la RTDB. |
-| `ROADMAP.md` | Tareas pendientes, fases y prioridades. |
+| `ROADMAP.md` | Planificación posterior al MVP y dependencias. |
 | `TROUBLESHOOTING.md` | Incidentes, bugs históricos y soluciones. |
 | `DECISIONS.md` | Decisiones de arquitectura (ADR) con razonamiento técnico. |
 | Driver/README.md | Setup, requisitos y funcionalidad de DriverApp. |
