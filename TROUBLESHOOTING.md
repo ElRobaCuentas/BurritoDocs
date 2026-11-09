@@ -155,7 +155,7 @@ según el mecanismo existente. Ver ADR-030 y CASO 019 de userapp.md.
 | Causa | La cuenta `${dni}@conductor.com` no existe en Firebase Auth. El administrador no creó el conductor desde el panel, o se ingresó un DNI incorrecto |
 | Diagnóstico | Verificar en Firebase Console → Authentication que el email existe |
 | Solución | Crear el conductor desde el Panel de Gestión en **AdminWeb** (ChoferesScreen). El servicio `admin_service.ts` crea Auth + RTDB simultáneamente |
-| Prevención | El flujo admin siempre crea Auth con email `${dni}@conductor.com` y contraseña = DNI |
+| Prevención | El flujo admin siempre crea Auth con email `${dni}@conductor.com` y contraseña inicial = DNI. Riesgo aceptado del MVP: reemplazar estas contraseñas antes de producción real |
 
 ### Error al crear conductor desde el panel admin
 
@@ -354,6 +354,7 @@ actual del proyecto, planificadas en fases futuras del roadmap.
 | Respaldo offline de la asignación | El respaldo vive en memoria (no sobrevive al proceso) y no puede detectar altas, cancelaciones ni cambios administrativos ocurridos durante la desconexión. Solo se habilita con `.info/connected == false`, no con un timeout aislado (ADR-028). |
 | Etiqueta «Servicio de ubicación activo» | Describe el servicio Android local en ejecución; no confirma publicación en RTDB ni distingue conectado/desconectado. Decisión de MVP en I08 (ADR-028). |
 | Exposición histórica de la contraseña de firma de release | La contraseña quedó expuesta en el historial de Git. El keystore de release no se encontró en el historial auditado y no hay evidencia identificada de uso indebido. La configuración de firma actual se conserva. No se ha decidido rotar la clave; la decisión se reevaluará si aparecen evidencias de compromiso o cambian las condiciones de riesgo. |
+| Deriva GPS en interiores | Observada durante las pruebas del 24/08/2026: un bus detenido en interiores puede mostrarse «EN MOVIMIENTO» por deriva del GPS. Aire libre sin problema. No se afirma que siga ocurriendo; ADR-020 sigue experimental y la calibración fina es post-MVP. |
 | Corte de red **durante** la sesión: Firebase no dispara `onError`; en DriverApp la recuperación depende del heartbeat T4.1 (catch-reset) y en UserApp el bus caducado se oculta por expiración de timestamp (estrategia C) | Atenuado por C4.6+T4.1 (22/08); escenario obligatorio del checklist de T1 |
 | Deuda de lint de UserApp | Pendiente post-MVP; sin fallos funcionales confirmados. Inventario, análisis y condiciones de revisión en [LINT_DEBT.md](LINT_DEBT.md) |
 

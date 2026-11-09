@@ -377,7 +377,7 @@ permanece intacta.
 - El admin puede crear conductores sin interrupción de su sesión.
 - El código usa inicialización lazy: si la app secundaria no existe,
   la crea con `firebase.initializeApp(config, 'SecondaryApp')`.
-- El service account key (`serviceAccountKey.json`) es gitignored.
+- El service account key (`serviceAccountKey.json`) es gitignored en User y Driver. No hay commits en los repositorios del ecosistema que lo registren; la necesidad de rotación no puede concluirse solo con la evidencia del repositorio.
 - **Riesgo identificado y corregido (ADR-018)**: `initializeApp()`
   es asíncrono y retorna `Promise<FirebaseApp>`. El código original
   no usaba `await`, por lo que `secondaryApp` recibía una Promise en
@@ -828,7 +828,7 @@ actualización publicada por el Driver", no "momento del fix GPS".
   que el heartbeat publica realmente con el GPS quieto.
 
 **Referencias:** ARCHITECTURE.md (sección 5 y 8), FIREBASE_SCHEMA.md
-(sección 3), HISTORIAL.md (T4.1 — heartbeat), ROADMAP.md (Bloque A).
+(sección 3), ROADMAP.md (Bloque A).
 
 ---
 
@@ -1039,7 +1039,7 @@ mantiene intacta (requisito funcional de UserApp).
 
 **Referencias:** FIREBASE_SCHEMA.md (§2 claves primarias, §4 nodo
 `/choferes_uids`, §9 modelo de autorización), MVP.md (§3 Seguridad,
-Bloque 2 S3), HISTORIAL.md.
+Bloque 2 S3).
 
 ---
 
@@ -1122,7 +1122,7 @@ Razones:
   administrativas al MVP; el siguiente hito es E2E de campo.
 
 **Referencias:** FIREBASE_SCHEMA.md (§4 nodo `/asignaciones`),
-HISTORIAL.md (S5 — semántica de desactivación), MVP.md (§4 W12).
+MVP.md (§4 W12).
 
 ---
 
@@ -1186,8 +1186,7 @@ rol por identidad.
   limpia el índice `/choferes_uids/{uid}`.
 
 **Referencias:** ARCHITECTURE.md, FIREBASE_SCHEMA.md (secciones 4 y 9),
-AdminWeb/README.md, HISTORIAL.md (I4 — separación de dominios), ADR-009,
-ADR-017, ADR-023.
+AdminWeb/README.md, ADR-009, ADR-017, ADR-023.
 
 ---
 
@@ -1259,7 +1258,7 @@ expiración de timestamp en la UserApp. **El sistema no garantiza que
 `isActive` refleje el estado real del bus.**
 
 **Referencias:** ARCHITECTURE.md (sección 8), FIREBASE_SCHEMA.md (sección 4),
-SendCoordinates.tsx, ROADMAP.md (UX-01), HISTORIAL.md (D4), ADR-010.
+SendCoordinates.tsx, ROADMAP.md (UX-01), ADR-010.
 
 ---
 
@@ -1315,7 +1314,7 @@ una relación N:N que la DriverApp actual no sabe interpretar.
   diseñar otra fase con cambios en el modelo y en DriverApp.
 
 **Referencias:** ARCHITECTURE.md (sección AdminWeb), FIREBASE_SCHEMA.md
-(`/asignaciones`), AdminWeb/AGENTS.md (§6.5 y §6.14), HISTORIAL.md (I08),
+(`/asignaciones`), AdminWeb/AGENTS.md (§6.5 y §6.14), ROADMAP.md (I08),
 ADR-024, ADR-026.
 
 ---

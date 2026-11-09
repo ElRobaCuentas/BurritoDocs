@@ -105,6 +105,7 @@ universitario. Requiere presencia física en el campus.
 | I09 — Autorización GPS por asignación | FIREBASE_SCHEMA §9 | Postergada; no condiciona I03/I08 |
 | I10 — Heartbeat/antigüedad del fix GPS | PROJECT_CONTEXT | Postergada; conservar comportamiento aprobado |
 | P06 — Perfil incompatible | correciones_piloto_pruebas.md | Postergada; no reabrir automáticamente |
+| Mantenimiento — Eliminar registro legacy `com.burritouserapp` (`b9b8149c`) en Firebase Console | Firebase Console | No bloqueante; limpieza post-MVP. No afecta T1 ni D2 |
 
 ## 7. Visión de Largo Plazo
 
