@@ -1258,7 +1258,7 @@ activo en RTDB hasta la acción manual del conductor o la mitigación por
 expiración de timestamp en la UserApp. **El sistema no garantiza que
 `isActive` refleje el estado real del bus.**
 
-**Referencias:** ARCHITECTURE.md (sección 8), FIREBASE_SCHEMA.md (sección 4),
+**Referencias:** ARCHITECTURE.md (sección 8), FIREBASE_SCHEMA.md (sección 3),
 SendCoordinates.tsx (separación stopProcess/signOut; antecedente histórico UX-01), ADR-010.
 
 ---

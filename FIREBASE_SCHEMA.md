@@ -2,88 +2,72 @@
 
 ## 1. Visión General
 
-El ecosistema utiliza **Firebase Realtime Database** como único bus de
-datos y almacenamiento persistente. No existe backend intermedio, base
-SQL ni otra fuente de verdad.
+Firebase Realtime Database es el bus de datos compartido del dominio. No hay
+backend intermedio ni base SQL. Firebase Auth mantiene las identidades y las
+apps pueden conservar estado local; RTDB no es el único almacenamiento del
+ecosistema.
 
-- **Proyecto Firebase**: `burritounmsm`
-- **URL de RTDB**: `https://burritounmsm-default-rtdb.firebaseio.com`
-- **SDK**: `@react-native-firebase/database` v23.8.x en las apps móviles
-  (Driver y User); Firebase JS SDK v12.x en AdminWeb (web).
+- **Proyecto documentado**: `burritounmsm`
+- **URL de RTDB documentada**: `https://burritounmsm-default-rtdb.firebaseio.com`
+- **SDK**: `@react-native-firebase/database` v23.8.x en User/Driver;
+  Firebase JS SDK v12.x en AdminWeb.
 
-La base de datos se organiza en nodos independientes, cada uno con un
-propósito específico dentro del sistema. No hay relaciones foráneas
-formales; las asociaciones entre nodos se resuelven mediante claves
-compartidas (DNI, placa, pushId, uid).
+Los nodos son independientes. Las relaciones se resuelven por claves
+compartidas (DNI, placa, pushId, uid). Este archivo describe el contrato de
+datos y permisos; no certifica por sí solo las reglas desplegadas.
 
 ## 2. Convenciones de Datos
 
-### Timestamps
+### Timestamps, fechas y turnos
 
-Todos los registros de tiempo se almacenan como **Unix epoch en
-milisegundos** (enteros). No se usan strings ISO, fechas locales ni
-zonas horarias.
+| Uso | Representación |
+|-----|----------------|
+| Tracking, creación de registros, `ultimaConexion`, feedback | Unix epoch en milisegundos (entero) |
+| `fecha` de asignación | String `YYYY-MM-DD`, día calendario `America/Lima` |
+| `turnos[].inicio` / `fin` | Entero en minutos desde medianoche (0–1439) |
 
-| Origen | Método |
-|--------|--------|
-| JavaScript (DriverApp) | `Date.now()` |
-| UserApp (server-side) | `database.ServerValue.TIMESTAMP` |
+Los clientes usan `Date.now()` al intentar publicar. `ServerValue.TIMESTAMP`
+se usa en perfiles y feedback. El `timestamp` de tracking es el de la
+publicación, no necesariamente el instante del fix GPS. No se usan strings
+ISO ni fechas localizadas dentro de RTDB.
 
-Las fechas de asignación se almacenan como string `YYYY-MM-DD`
-(día calendario `America/Lima`) para permitir filtros client-side. AdminWeb
-solo permite seleccionar hoy o fechas futuras en la pantalla de asignaciones.
+### Coordenadas y magnitudes
 
-### Coordenadas
-
-Latitud y longitud se almacenan como **números flotantes** con precisión
-directa desde el hardware GPS. Sin truncamiento, redondeo ni
-transformación.
+`latitude` y `longitude` son números flotantes sin truncamiento. `speed` se
+expresa en **m/s** y `heading` en grados. Los valores ausentes o inválidos se
+normalizan en la recepción según las reglas I06 descritas en §3.
 
 ### Booleanos de estado
 
-- `isActive`: presente en nodos de tracking. Indica si el bus está
-  transmitiendo activamente.
-- `activo`: presente en nodos de administración (conductores, buses,
-  asignaciones). Indica si el registro está vigente.
+| Campo | Nodos | Significado |
+|-------|-------|-------------|
+| `activo` | Administración (`choferes`, `buses`, `asignaciones`) | Registro habilitado/vigente. No revoca permisos ni detiene tracking. |
+| `isActive` | Tracking (`ubicacion_buses`) | Último estado publicado por la DriverApp. `true` no certifica que el bus siga transmitiendo. |
 
 ### Claves primarias
 
-| Nodo | Tipo de clave | Ejemplo |
-|------|--------------|---------|
-| `/ubicacion_buses/{placa}` | Placa del bus | `ABC-123` |
-| `/choferes/{dni}` | DNI del conductor | `12345678` |
-| `/choferes_uids/{uid}` | Auth UID de Firebase (índice uid→DNI) | `abc123...` |
-| `/buses/{placa}` | Placa del bus | `ABC-123` |
-| `/asignaciones/{pushId}` | Push ID generado por Firebase | `-Nx9...` |
-| `/usuarios/{uid}` | Auth UID de Firebase | `abc123...` |
-| `/comentarios/{pushId}` | Push ID generado por Firebase | `-Ny8...` |
-| `/administradores/{auth.uid}` | Auth UID de Firebase | `def456...` |
+| Nodo | Clave | Ejemplo |
+|------|-------|---------|
+| `/ubicacion_buses/{placa}` | Placa | `ABC-123` |
+| `/choferes/{dni}` | DNI | `12345678` |
+| `/choferes_uids/{uid}` | Auth UID | `1u7VkXlh0ZaqE2ysbf024i2QXPo1` |
+| `/buses/{placa}` | Placa | `ABC-123` |
+| `/asignaciones/{pushId}` | Push ID | `-Nx9aBcDeFgHiJkLmNoP` |
+| `/usuarios/{uid}` | Auth UID | `abc123def456uid` |
+| `/comentarios/{pushId}` | Push ID | `-Ny8GhIjKlMnOpQrStUv` |
+| `/administradores/{auth.uid}` | Auth UID | `jDhveoruZpgX5ZksfrWd5qcrDcp1` |
 
-> Nota: el nodo legacy `/ubicacion_burrito` fue eliminado de las reglas de
-> seguridad el 23/08/2026 (queda denegado por defecto). El borrado del dato
-> residual en RTDB está **pendiente en Consola** — no es verificable desde
-> el cliente.
+El nodo legacy `/ubicacion_burrito` dejó de usarse en T3.1 y fue eliminado de
+las reglas el 23/08/2026. El dato residual en RTDB no es verificable desde el
+cliente; su borrado en Consola quedó pendiente.
 
 ## 3. Nodos de Tracking
 
-Actualmente el sistema utiliza un único nodo de tracking consolidado
-(`/ubicacion_buses/{placa}`). El nodo heredado `/ubicacion_burrito` dejó
-de usarse desde la migración multi-bus (T3.1) y el 23/08/2026 fue
-eliminado de las reglas de seguridad (queda denegado por defecto;
-borrado del dato pendiente en Consola).
+### `/ubicacion_buses/{placa}`
 
-### `/ubicacion_buses/{placa}` (activo)
-
-- **Propósito**: nodo único de tracking. Contiene la posición en vivo
-  de todos los buses activos, cada uno identificado por su placa.
-- **Escritura**: DriverApp mediante `firebase_service.ts`
-  (`updateBusLocation`/`stopBusService`). También se inicializa desde
-  `admin_service.ts` al crear un bus nuevo.
-- **Lectura**: UserApp, mediante listener continuo en
-  `map_service.ts` (`subscribeToBusLocations()`) sobre el path
-  `/ubicacion_buses`, que alimenta `burritoLocationStore` con un
-  `Record<string, BurritoLocation>` indexado por placa (T3.1).
-- **Estructura** (payload de tracking):
+Nodo único de tracking multi-bus. DriverApp escribe el estado; AdminWeb crea
+un marcador al dar de alta un bus; UserApp escucha la colección completa y
+mantiene un `Record<string, BurritoLocation>` indexado por placa.
 
 ```json
 {
@@ -92,7 +76,7 @@ borrado del dato pendiente en Consola).
       "latitude": -12.056,
       "longitude": -77.084,
       "heading": 180,
-      "speed": 15,
+      "speed": 4.2,
       "timestamp": 1718000000000,
       "isActive": true
     }
@@ -102,146 +86,105 @@ borrado del dato pendiente en Consola).
 
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
-| `latitude` | number | Coordenada del GPS |
-| `longitude` | number | Coordenada del GPS |
-| `heading` | number | Rumbo en grados |
-| `speed` | number | Velocidad |
-| `timestamp` | number | Unix epoch ms — última actualización **publicada** por la DriverApp. Puede provenir del fix GPS o del heartbeat de presencia (T4.1). No debe leerse como "el momento exacto del GPS". |
-| `isActive` | boolean | `true` durante tracking, `false` al detener |
+| `latitude` | number | Latitud GPS, rango válido −90 a 90 |
+| `longitude` | number | Longitud GPS, rango válido −180 a 180 |
+| `heading` | number | Rumbo en grados; la recepción usa `0` si falta |
+| `speed` | number | Velocidad en m/s; la recepción usa `0` si falta |
+| `timestamp` | number | Unix ms del intento de publicación (GPS o heartbeat) |
+| `isActive` | boolean | Último estado publicado; `false` indica detención explícita |
 
-**Validación de recepción I06 (03/11/2026):** se rechazan valores explícitos
-incorrectos. I06-A conserva coordenadas `0` y timestamp `Date.now()` para
-campos ausentes/null, como limitación aceptada desde el 30/10. No implica
-que todo registro incompleto sea rechazado. I06-B descarta timestamps
-explícitos mayores que hora local de recepción + **300 000 ms**; el límite
-exacto se acepta. No modifica payload ni reglas RTDB: es un filtro cliente
-antes del store. Un dato rechazado no renueva la posición/caducidad previa.
-No sincroniza los relojes ni resuelve adelantos dentro del margen (ADR-030).
-Corrección verificada localmente, integración/push y APK pendientes al corte.
+**Publicación y ciclo de vida.** `updateBusLocation()` actualiza coordenadas,
+rumbo, velocidad, `timestamp` e `isActive: true`. El GPS publica cada ~3 s y
+un heartbeat cada 8 s reutiliza la última ubicación conocida si el GPS no
+emitió. `stopBusService()` escribe únicamente `isActive: false`: no borra
+coordenadas ni renueva `timestamp`. Al crear un bus, AdminWeb escribe
+`{ "isActive": false }` como marcador de existencia.
 
-**Inicialización desde admin**: al crear un bus en el panel
-administrativo, se escribe `{ isActive: false }` en
-`/ubicacion_buses/{placa}` como marcador de existencia.
+No existe `onDisconnect`. Una terminación anómala puede dejar `isActive: true`.
+UserApp además oculta el bus cuando el `timestamp` alcanza el umbral de
+frescura (30 s en la implementación actual). Ninguna de estas señales demuestra
+que el proceso de tracking siga vivo.
 
-```json
-{
-  "ubicacion_buses": {
-    "ABC-123": {
-      "isActive": false
-    }
-  }
-}
-```
+**Recepción I06 (cliente, no reglas RTDB).** UserApp valida el snapshot
+completo antes de actualizar el store:
+
+- Rechaza tipos incorrectos, coordenadas fuera de rango, `timestamp` no
+  entero/negativo y timestamps futuros más allá de `receivedAt + 300 000 ms`.
+  El límite exacto es aceptado.
+- Acepta campos ausentes/null. I06-A normaliza latitud/longitud a `0` y
+  `timestamp` a `Date.now()`; es una limitación aceptada desde el 30/10.
+  `heading` y `speed` no se validan y usan `0` por defecto.
+- Si `isActive: false`, no exige coordenadas válidas. El store marca
+  `coordinatesValid: false` como metadato local y, si había una posición
+  previa, conserva las coordenadas anteriores.
+- El filtro temporal acepta una transición activo→inactivo con el mismo
+  `timestamp`; fuera de ese caso rechaza timestamps anteriores o iguales.
+  Un dato rechazado no renueva la posición ni la caducidad previa.
+- I06-B no sincroniza relojes ni corrige adelantos dentro del margen
+  (ADR-030). El commit `011a4b6` está integrado en `User/main` y sincronizado
+  con `origin/main`. La validación del APK actualizado no está acreditada;
+  esta referencia solo acredita la integración Git, no pruebas físicas.
 
 ## 4. Nodos de Administración
 
+AdminWeb es el único productor de estos nodos. DriverApp lee su perfil y su
+asignación; UserApp no los consulta. Las escrituras descritas son operaciones
+de cliente: las reglas y sus límites se detallan en §9.
+
 ### `/choferes/{dni}`
-
-- **Propósito**: catálogo de conductores. Cada clave es el DNI del
-  conductor.
-- **Escritura**: `admin_service.createChofer()` (desde AdminWeb).
-- **Lectura**: `admin_service.subscribeToChoferes()` (listener continuo
-  desde AdminWeb, panel admin) y DriverApp, que lee `/choferes/{dni}`
-  (`SendCoordinates.tsx`) para mostrar el nombre del conductor logueado.
-- **Estructura**:
-
-```json
-{
-  "choferes": {
-    "12345678": {
-      "nombre": "Juan",
-      "apellidos": "Pérez López",
-      "activo": true,
-      "uid": "1u7VkXlh0ZaqE2ysbf024i2QXPo1",
-      "creadoEn": 1776948195000,
-      "creadoPor": "jDhveoruZpgX5ZksfrWd5qcrDcp1"
-    }
-  }
-}
-```
 
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
 | `nombre` | string | Nombre del conductor |
-| `apellidos` | string | Apellidos del conductor |
-| `activo` | boolean | `true` mientras el registro está vigente |
-| `uid` | string | UID de Firebase Auth del conductor; base del índice `/choferes_uids`. Puede faltar en conductores creados antes del 23/08/2026 |
-| `creadoEn` | number | Unix epoch ms de creación (`Date.now()`) |
-| `creadoPor` | string | UID del administrador que creó el registro |
+| `apellidos` | string | Apellidos |
+| `activo` | boolean | Registro habilitado; no bloquea tracking ni permisos |
+| `uid` | string | UID de Auth; puede faltar en registros anteriores al 23/08/2026 |
+| `creadoEn` | number | Unix ms de creación |
+| `creadoPor` | string | UID del admin creador |
 
-**Creación**: además de escribir en RTDB, `createChofer()` crea una
-cuenta de Firebase Auth con email `${dni}@conductor.com` y contraseña
-igual al DNI. Usa una **app temporal por operación** con
-`inMemoryPersistence` para no cerrar la sesión del admin (ver ADR-011 y
-ADR-025). El mismo mecanismo usa `createAdmin()` con `{dni}@admin.com`.
+`createChofer()` crea la cuenta Auth `${dni}@conductor.com` (contraseña = DNI)
+con una app temporal e `inMemoryPersistence`, escribe el perfil y por último
+el índice uid→DNI. **No es una transacción multi-ruta**: no hay rollback
+conjunto. La escritura del índice es la última y es fail-closed: si falla, el
+conductor existe pero no puede publicar tracking hasta repararlo.
 
-### `/choferes_uids/{uid}` (nuevo, 23/08/2026)
+Lectura: AdminWeb escucha la colección; el conductor indexado puede leer solo
+su propio `/choferes/{dni}`. No existe `deleteChofer`; desactivar solo cambia
+`activo`.
 
-- **Propósito**: índice inverso uid→DNI que permite a las Security Rules
-  verificar que un usuario autenticado es un conductor registrado, sin
-  exponer el catálogo `/choferes` (lectura admin y perfil propio tras I03). Es la base
-  de la autorización de escritura sobre `/ubicacion_buses` (ADR-023).
-- **Escritura**: `admin_service.createChofer()` (AdminWeb)
-  escribe `{uid: dni}` inmediatamente después de crear la cuenta Auth y
-  el registro en `/choferes`. Postura **fail-closed**: es la última
-  escritura de la transacción; si falla, el conductor existe pero no podrá
-  publicar ubicación hasta reparar el índice manualmente.
-- **Lectura**: ninguna desde cliente (`.read: false`). Solo las reglas
-  lo consultan internamente vía `root.child('choferes_uids')`.
-- **Población inicial**: backfill manual desde Consola para conductores
-  preexistentes (hecho el 23/08/2026).
-- **Estructura**:
+### `/choferes_uids/{uid}`
 
-```json
-{
-  "choferes_uids": {
-    "1u7VkXlh0ZaqE2ysbf024i2QXPo1": "11223344"
-  }
-}
-```
+Índice inverso `{ "<authUid>": "<dni>" }`, por ejemplo
+`"1u7VkXlh0ZaqE2ysbf024i2QXPo1": "12345678"`. Permite a las reglas verificar
+que un UID es conductor sin exponer el catálogo.
+`.read: false`; solo las reglas lo consultan internamente. Se escribió por
+backfill para conductores preexistentes y lo escribe `createChofer()`.
+
+**La existencia en el índice significa “conductor registrado”, no “conductor
+activo”.** `toggleChoferStatus()` no elimina el índice; por tanto desactivar a
+un conductor no le revoca la autorización de escritura en tracking.
 
 ### `/buses/{placa}`
 
-- **Propósito**: catálogo de buses. Cada clave es la placa del vehículo
-  en mayúsculas.
-- **Escritura**: `admin_service.createBus()` (desde AdminWeb).
-- **Lectura**: `admin_service.subscribeToBuses()` (listener continuo
-  desde AdminWeb, panel admin).
-- **Estructura**:
-
-```json
-{
-  "buses": {
-    "ABC-123": {
-      "activo": true,
-      "creadoEn": 1776948195000,
-      "creadoPor": "jDhveoruZpgX5ZksfrWd5qcrDcp1"
-    }
-  }
-}
-```
-
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
-| `activo` | boolean | `true` mientras el bus está vigente |
-| `creadoEn` | number | Unix epoch ms de creación (`Date.now()`) |
-| `creadoPor` | string | UID del administrador que creó el registro |
+| `activo` | boolean | Bus habilitado; no borra tracking ni asignaciones |
+| `creadoEn` | number | Unix ms de creación |
+| `creadoPor` | string | UID del admin creador |
 
-**Efecto secundario**: al crear un bus, se inicializa automáticamente
-`/ubicacion_buses/{placa}` con `{ isActive: false }`.
+La placa se normaliza a mayúsculas. `createBus()` escribe primero el bus y
+después el marcador `/ubicacion_buses/{placa}` con `isActive: false`; no es
+atómico. `deleteBus()` ejecuta dos borrados RTDB separados. La protección
+contra borrar un bus con asignación activa/futura está en la pantalla
+(`hasActiveOrFutureBusAssignment`), no en las reglas ni dentro de `deleteBus()`.
 
 ### `/asignaciones/{pushId}`
 
-- **Propósito**: relación temporal entre un conductor y un bus para una
-  fecha, con uno o varios turnos informativos. Clave generada por `push()`
-  de Firebase.
-- **Escritura**: `admin_service.createAsignacion()` y
-  `admin_service.updateTurnos()` (desde AdminWeb, panel admin). Requiere
-  administrador autenticado: si no existe sesión, la operación falla sin
-  escribir en RTDB. La DriverApp solo lee `/asignaciones`; no escribe.
-- **Lectura**: `admin_service.subscribeToAsignacionesPorFecha()` (listener
-  continuo) y DriverApp (consulta puntual con `orderByChild('choferId')`).
-- **Estructura**:
+Relación diaria conductor↔bus. AdminWeb escucha la colección y filtra por
+fecha; crea, cancela y edita turnos. DriverApp solo lee. La lectura del
+conductor está limitada a su propio `choferId` mediante consulta indexada.
+El alta exige una sesión activa en el servicio; `updateTurnos()` no repite esa
+comprobación. La autorización real de escritura la impone la regla admin.
 
 ```json
 {
@@ -266,80 +209,50 @@ ADR-025). El mismo mecanismo usa `createAdmin()` con `{dni}@admin.com`.
 
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
-| `choferId` | string | DNI del conductor (coincide con clave en `/choferes`) |
-| `busId` | string | Placa del bus (coincide con clave en `/buses`) |
-| `fecha` | string | Fecha de la asignación en `YYYY-MM-DD`, día calendario `America/Lima`. El alta rechaza fechas pasadas; la pantalla permite seleccionar hoy o fechas futuras |
-| `activo` | boolean | `true` mientras la asignación está vigente |
-| `turnos` | array de objetos | **Fuente de verdad**. Lista ordenada de intervalos `{ inicio, fin }` en minutos desde medianoche (0–1439). Mínimo uno; `inicio < fin`; sin cruzar medianoche; sin solapamientos; consecutivos/separados permitidos. Opcional solo en registros viejos |
-| `horaInicio` | number | **Legacy/compatibilidad**. Minutos desde medianoche (0–1439) del primer turno. Espejo de `turnos[0].inicio`; las pantallas nuevas usan `turnos` |
-| `horaFin` | number | **Legacy/compatibilidad**. Minutos del fin del primer turno; espejo de `turnos[0].fin` |
-| `createdAt` | number | Unix timestamp en milisegundos del momento de creación (`Date.now()`). Formato legible solo en la UI (`toLocaleString('es-PE', { timeZone: 'America/Lima' })`) |
-| `createdBy` | string | UID de Firebase Auth del administrador que creó la asignación. Coincide con una clave de `/administradores`. Es auditoría, no seguridad: la autorización real sigue siendo `auth.uid` en `/administradores` vía reglas RTDB |
+| `choferId` | string | DNI; coincide con `/choferes` |
+| `busId` | string | Placa; coincide con `/buses` |
+| `fecha` | string | `YYYY-MM-DD` en `America/Lima`; alta solo hoy o futuro |
+| `activo` | boolean | Asignación vigente; cancelar solo lo pone en `false` |
+| `turnos` | array | Fuente de verdad; intervalos `{ inicio, fin }` en minutos |
+| `horaInicio` | number | Legacy: espejo de `turnos[0].inicio` |
+| `horaFin` | number | Legacy: espejo de `turnos[0].fin` |
+| `createdAt` | number | Unix ms de creación; se muestra en la UI |
+| `createdBy` | string | UID del admin creador (coincide con `/administradores`); auditoría, no autorización |
 
-**Validación de exclusividad**: al crear una asignación, el servicio
-verifica que el **conductor** no tenga otra asignación activa para la misma
-`fecha` (hoy o futura). No valida que el bus esté libre; varios conductores
-pueden compartir un bus. `hasActiveOrFutureBusAssignment` se usa solo para
-bloquear la eliminación de un bus con asignación activa o futura.
+**Turnos.** Mínimo uno; `inicio < fin`; sin cruzar medianoche; sin
+solapamientos; ordenados; consecutivos o separados permitidos. Editar turnos
+actualiza `turnos`, `horaInicio` y `horaFin`, y solo se permite en asignaciones
+existentes y activas. Los turnos son informativos y no inician ni detienen el
+tracking.
 
-**Turnos**: `turnos` es la fuente de verdad. `horaInicio`/`horaFin` se
-mantienen como espejo del primer turno por compatibilidad; editar turnos
-actualiza ambos. Los turnos son datos administrativos: no inician ni
-detienen el tracking de la DriverApp.
+**Exclusividad.** `createAsignacion()` lee la colección y rechaza si el mismo
+conductor ya tiene una asignación activa para la fecha. Es una validación
+previa del servicio, **no una garantía atómica ni una restricción de las
+reglas**: dos altas concurrentes podrían duplicar. No valida que el bus esté
+libre; varios conductores pueden compartir bus. `hasActiveOrFutureBusAssignment`
+solo protege el borrado de buses desde la pantalla.
 
-**Cancelación**: al cancelar, se establece `activo: false`. El registro
-no se elimina.
+**Compatibilidad.** Registros anteriores al multi-turno pueden carecer de
+`turnos`; `getTurnos()` usa `horaInicio`/`horaFin` como un único turno si
+forman un intervalo válido. Pueden faltar `createdAt`/`createdBy`; la UI
+muestra `createdAt` condicionalmente y hoy no renderiza `createdBy`. No hay
+migración masiva.
 
-**Nota**: las asignaciones anteriores al soporte multi-turno pueden carecer
-de `turnos`; `getTurnos()` usa `horaInicio`/`horaFin` como un único turno
-cuando ambos forman un intervalo válido. Los registros anteriores a la
-auditoría mínima también pueden carecer de `createdAt`/`createdBy`, que se
-renderizan condicionalmente. No se hace migración masiva.
+**I08.** DriverApp valida al montar y al pulsar INICIAR con
+`orderByChild('choferId').equalTo(dni)` y la fecha Lima del momento. Una
+respuesta ausente, cancelada, duplicada, de otro conductor o inválida bloquea
+el inicio. Si la consulta falla y `.info/connected` indica desconexión, puede
+continuar con un respaldo **en memoria** del mismo conductor/día; no persiste
+ni cubre cambios administrativos offline (ADR-028). `.info/connected` es una
+ruta especial del SDK, no un nodo de datos ni una confirmación de escritura.
 
-**Reglas**: `/asignaciones` no valida campos hijos; `turnos` es aceptado
-por las reglas actuales (lectura autenticada, escritura admin). El índice
-`.indexOn` sigue siendo `choferId`.
+### `/administradores/{auth.uid}`
 
-**Nota (I08)**: la DriverApp valida la asignación al montar y de nuevo al
-presionar INICIAR, con `orderByChild('choferId').equalTo(dni)` y la fecha
-`America/Lima` resuelta en ese momento. Una respuesta conocida como ausente,
-cancelada, duplicada, de otro conductor o inválida bloquea el inicio y
-revoca el respaldo anterior. Si la consulta falla y `.info/connected`
-reporta desconexión, puede continuar con un respaldo **en memoria** del
-mismo conductor/día (no persiste ni cubre cambios administrativos offline;
-ADR-028). `.info/connected` es una ruta especial del SDK, sin `/` inicial:
-no es un nodo de datos y no confirma escrituras.
-
-### `/administradores/{auth.uid}` (nuevo)
-
-- **Propósito**: fuente única de verdad para autorización administrativa.
-  Cada clave es el UID de Firebase Auth del administrador. La mera
-  existencia de la clave (`snapshot.exists()`) define que el usuario es
-  administrador. **No existe ni se lee un campo `rol`**.
-- **Escritura**: la gestión se realiza desde **AdminWeb** (`AdminsScreen`
-  → `createAdmin()`), que crea la cuenta Auth `${dni}@admin.com` y
-  escribe el nodo. El **primer administrador** debe crearse manualmente
-  desde Firebase Console (bootstrap): es el único que no puede crearse
-  desde el panel.
-- **Lectura**: AdminWeb — `admin_check.ts` (`existeAdministrador(uid)`)
-  para el auth gate post-login. RTDB Security Rules — para el predicado
-  admin en todos los nodos administrativos.
-- **Estructura**:
-
-```json
-{
-  "administradores": {
-    "abcDef123456UidAdmin": {
-      "dni": "77777777",
-      "nombres": "Admin",
-      "apellidos": "UNMSM",
-      "correo": "77777777@admin.com",
-      "creadoEn": 1776948195000,
-      "creadoPor": "jDhveoruZpgX5ZksfrWd5qcrDcp1"
-    }
-  }
-}
-```
+Fuente de verdad de autorización administrativa. La existencia de la clave
+define el rol; **no se lee ningún campo `rol`**. `createAdmin()` crea la cuenta
+Auth `${dni}@admin.com` con el mismo mecanismo de app temporal y luego el
+nodo. El primer administrador se crea manualmente en Consola (bootstrap).
+`deleteAdmin()` borra solo el nodo RTDB; la cuenta Auth se elimina manualmente.
 
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
@@ -347,158 +260,107 @@ no es un nodo de datos y no confirma escrituras.
 | `nombres` | string | Nombres del administrador |
 | `apellidos` | string | Apellidos del administrador |
 | `correo` | string | Email de Auth (`${dni}@admin.com`) |
-| `creadoEn` | number | Unix epoch ms de creación (`Date.now()`) |
-| `creadoPor` | string | UID del administrador que creó la cuenta (o `null` si se creó desde Consola) |
+| `creadoEn` | number | Unix ms de creación |
+| `creadoPor` | string \| null | UID del admin creador; `null` en bootstrap por Consola |
 
-Se aceptan formatos **legacy** para el valor del nodo: `true` (mínimo, RTDB
-no permite valores nulos) o `{ "nombre", "dni" }`. La verificación de rol
-solo comprueba que la clave exista, por lo que ambos siguen siendo válidos.
+Se aceptan formatos legacy para el valor del nodo: `true` o un objeto con
+`nombre`/`dni`. `creadoPor` puede ser `null` en el bootstrap por Consola. La
+autorización solo comprueba existencia. Un administrador existente puede crear
+otros; no hay validación de campos hijos en las reglas.
 
-**Propiedad del nodo**: AdminWeb (admin) escribe/lee los nodos de gestión
-(`/choferes`, `/buses`, `/asignaciones`). La UserApp ya no consulta ni
-escribe en estos nodos. BurritoDriverApp lee su perfil `/choferes/{dni}` y
-consulta `/asignaciones` por `choferId` para obtener el bus del día
-`America/Lima` (I08); los turnos son informativos y no gobiernan el GPS.
-El administrador accede al panel exclusivamente desde AdminWeb.
-
-## 5. Nodos de Autenticación
+## 5. Perfiles de Estudiantes
 
 ### `/usuarios/{uid}`
 
-- **Propósito**: perfil de usuarios estudiantes. Creado durante el
-  registro o al completar el perfil tras Google Sign-In.
-- **Escritura**: `SignUpScreen.tsx` y `AvatarPickerScreen.tsx`.
-- **Lectura**: `SignInScreen.tsx` y `SignUpScreen.tsx` (consulta
-  puntual con `once('value')`).
-- **Estructura**:
-
-```json
-{
-  "usuarios": {
-    "abc123def456uid": {
-      "nombre": "Carlos",
-      "avatar": "ingeniero",
-      "email": "carlos@example.com",
-      "rol": "estudiante",
-      "ultimaConexion": 1718000000000
-    }
-  }
-}
-```
+Perfil de la app estudiantil, separado de la identidad de Firebase Auth. Se
+crea durante el registro o al completar el perfil tras Google Sign-In.
+`SignUpScreen` y `AvatarPickerScreen` escriben el perfil; `SignInScreen` y
+`SignUpScreen` actualizan `ultimaConexion`. La lectura es puntual desde esas
+pantallas.
 
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
 | `nombre` | string | Nombre del estudiante |
 | `avatar` | string | Facultad: `ingeniero`, `salud`, `economista`, `humanidades` |
-| `email` | string | Email registrado en Firebase Auth |
-| `rol` | string | Siempre `estudiante`. El valor `admin` fue deprecado. |
-| `ultimaConexion` | number | ServerValue.TIMESTAMP del último login |
+| `email` | string | Email de Auth |
+| `rol` | string | Siempre `estudiante`; valor `admin` deprecado |
+| `ultimaConexion` | number | `ServerValue.TIMESTAMP` del último login |
 
-**Nota sobre roles**: el campo `rol` en `/usuarios/{uid}` fue deprecado
-como fuente de autorización administrativa por ser auto-escribible por el
-propio usuario (regla `.write` del dueño sobre su propio nodo). La nueva
-fuente única de verdad es `/administradores/{auth.uid}`: la existencia de
-la clave define el rol admin y un usuario no puede autoasignárselo, porque
-la escritura sobre ese nodo exige ser un administrador ya existente.
+`ultimaConexion` es la marca del último inicio de sesión, no presencia
+continua. El cambio de avatar desde el drawer es una preferencia local del
+store; no implica una escritura RTDB. El campo `rol` fue deprecado como
+autorización porque el dueño puede escribir su propio nodo.
 
 ## 6. Nodos de Feedback
 
 ### `/comentarios/{pushId}`
 
-- **Propósito**: almacenar opiniones y calificaciones de estudiantes
-  enviadas desde el modal de feedback en el CustomDrawer.
-- **Escritura**: `MapService.sendFeedback()`.
-- **Lectura**: no se consume actualmente en ninguna pantalla.
-- **Estructura**:
+`MapService.sendFeedback()` crea un hijo nuevo; ninguna pantalla lo lee. El
+servicio exige que `uid` coincida con `auth.uid`. Campos: `username`, `avatar`,
+`rating`, `mensaje`, `uid`, `email` y `timestamp` (`ServerValue.TIMESTAMP`).
 
-```json
-{
-  "comentarios": {
-    "-Ny8GhIjKlMnOpQrStUv": {
-      "username": "Carlos",
-      "avatar": "ingeniero",
-      "rating": 4,
-      "mensaje": "Buen servicio",
-      "uid": "abc123def456uid",
-      "email": "carlos@example.com",
-      "timestamp": 1718000000000
-    }
-  }
-}
-```
+**Contrato I04.** La colección no admite escritura directa; solo creación de
+un hijo inexistente con `uid` string igual a `auth.uid` y `rating` numérico
+entero entre 1 y 5. No se puede actualizar ni borrar, tampoco desde admin.
+`username`, `avatar`, `mensaje` y `email`, si existen, deben ser strings;
+`timestamp`, si existe, debe ser numérico positivo. No se impone lista
+cerrada de campos, límites de longitud, moderación ni rate limiting. La
+lectura permanece denegada.
 
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `username` | string | Nombre del estudiante |
-| `avatar` | string | Facultad seleccionada |
-| `rating` | number | Calificación (1–5) |
-| `mensaje` | string | Texto libre |
-| `uid` | string | Auth UID del remitente |
-| `email` | string | Email del remitente |
-| `timestamp` | number | ServerValue.TIMESTAMP (generado por Firebase) |
+## 7. Consistencia, Compatibilidad y Límites
 
-**Contrato I04 publicado:** la colección no admite escritura directa;
-solo creación de un hijo que aún no existe, con `uid` string igual a
-`auth.uid` y `rating` numérico entero entre 1 y 5. No permite actualizar ni
-borrar comentarios existentes. Los campos opcionales `username`, `avatar`,
-`mensaje` y `email`, si existen, deben ser strings; `timestamp`, si existe,
-debe ser numérico positivo. No se impone lista cerrada de campos, límites
-de longitud ni rate limiting. `CustomDrawer` obtiene el UID de Firebase
-Auth; el servicio contrasta ese UID con la sesión y usa `push().set()` con
-timestamp de servidor (User `5bc3a83`). La lectura permanece denegada.
+### Funcionalidades no implementadas
 
-## 7. Estado del Esquema
+- `/recorridos` no tiene productores ni consumidores en el código inspeccionado.
+  Depende de geofencing/control de turnos; no debe tratarse como nodo activo.
+- I09 (restringir tracking al bus asignado) está postergada en `ROADMAP.md` §3.
+- `/ubicacion_burrito` es legacy: fuera de reglas y pendiente de limpieza en
+  Consola. No se usa para tracking.
 
-El esquema se encuentra consolidado tras la migración multi-bus (T3.1),
-la migración del panel admin a la aplicación web **AdminWeb** (ADR-025) y
-el endurecimiento de las reglas de seguridad por UID (23/08/2026,
-ADR-023), ampliado por I03/I04 (publicación y validación real informadas por
-el usuario el 03/11/2026; ver §9). El nodo heredado `/ubicacion_burrito` fue eliminado de las
-reglas; todo el tracking fluye a través de `/ubicacion_buses/{placa}`.
+### Compatibilidad
 
-### Nodos activos (flujo actual)
+| Caso | Tratamiento actual |
+|------|--------------------|
+| Conductor anterior sin `uid` | Requiere backfill manual del índice para publicar tracking |
+| Administrador legacy (`true` u objeto) | Válido para autorización por existencia |
+| Asignación sin `turnos` | Se lee como un turno desde `horaInicio`/`horaFin` |
+| `turnos` como objeto legacy | Se normaliza a lista; si no hay turnos válidos, se usa el espejo |
+| Asignación sin `createdAt`/`createdBy` | La UI tolera su ausencia; no hay migración masiva |
+| Perfil local persistido | Puede sobrevivir offline; no sustituye la fuente RTDB |
 
-| Nodo | Estado | Propietario | Evolución prevista |
-|------|--------|-------------|-------------------|
-| `/asignaciones` | Definitivo | AdminWeb (admin) | Se mantiene. |
-| `/choferes` | Definitivo | AdminWeb (admin) | Se mantiene. |
-| `/choferes_uids` | Definitivo | AdminWeb (createChofer) | Índice uid→DNI para reglas (ADR-023). Backfill manual para preexistentes. |
-| `/buses` | Definitivo | AdminWeb (admin) | Se mantiene. |
-| `/administradores` | Definitivo | AdminWeb (Admin) | Alta desde AdminWeb; el primer administrador se crea en Consola. |
-| `/usuarios` | Definitivo | UserApp | Se mantiene. |
-| `/comentarios` | Provisional | UserApp | Sin cambios previstos inmediatos. |
-| `/ubicacion_buses` | Definitivo | DriverApp (conductor) | Nodo único de tracking. Escritura restringida a conductores indexados y admins (ADR-023). |
-| `/ubicacion_burrito` | Eliminado de reglas | — | Denegado por defecto desde el 23/08/2026. Borrado del dato pendiente en Consola. |
+### Operaciones parciales y concurrencia
 
-### Nodos planificados (no existen en RTDB)
+- Alta de conductor: Auth → perfil → índice. Si falla después de Auth puede
+  quedar una cuenta huérfana; si falla el índice, el conductor no publica.
+- Alta de admin: Auth → nodo RTDB. Si falla el nodo, la cuenta Auth queda
+  huérfana y debe limpiarse en Consola.
+- Alta de bus: nodo `/buses` → marcador de tracking. Borrado: dos `remove()`
+  separados. No hay transacción.
+- `deleteAdmin()` no borra la cuenta Auth. `toggleChoferStatus()` y
+  `toggleBusStatus()` solo cambian `activo`; no cancelan asignaciones,
+  no borran índices y no detienen GPS.
+- La exclusividad conductor/fecha se comprueba antes de escribir. No hay
+  transacción ni índice único; las reglas no validan campos hijos de
+  `/asignaciones`. La concurrencia puede producir duplicados.
+- `createdBy` es auditoría, no seguridad: un cliente con permiso podría
+  escribir un UID ajeno si las reglas lo admitieran.
 
-| Nodo | Dependencia |
-|------|-------------|
-| `/recorridos` | Requiere implementación de geofencing y control de turnos |
+### Persistencia y estado offline
 
-### Recomendaciones para cambios futuros
-
-Cuando el esquema evolucione, los siguientes documentos deben
-actualizarse en conjunto:
-
-- **PROJECT_CONTEXT.md**: sección de estado actual y limitaciones.
-- **ARCHITECTURE.md**: secciones de flujo de datos y consideraciones.
-- **README.md** de cada app: paths de RTDB relevantes.
-- **AGENTS.md** de cada app: paths que los asistentes deben conocer.
+- DriverApp mantiene la persistencia de disco desactivada (ADR-003). Las
+  escrituras se entregan al SDK y pueden quedar pendientes en memoria; no se
+  encola un reintento propio. El `timestamp` se toma al intentar publicar y
+  el heartbeat puede reutilizar coordenadas anteriores.
+- UserApp mantiene el tracking en memoria y persiste el perfil local con
+  Zustand. Ese perfil no refleja cambios remotos.
+- El respaldo de asignación de DriverApp es en memoria, por conductor/día, y
+  no cubre cambios administrativos hechos durante la desconexión (ADR-028).
 
 ## 8. Índices Requeridos
 
-Firebase Realtime Database requiere reglas de índice (`.indexOn`) para
-consultas con `orderByChild`. Sin el índice apropiado, la consulta
-falla o se ejecuta ineficientemente.
-
-### Índice actualmente necesario
-
-| Path | Campo índice | Origen de consulta |
-|------|-------------|-------------------|
-| `/asignaciones` | `choferId` | DriverApp: `orderByChild('choferId').equalTo(driverDni)` en `SendCoordinates.tsx` |
-
-Regla Firebase requerida:
+| Path | Campo índice | Consulta |
+|------|--------------|----------|
+| `/asignaciones` | `choferId` | DriverApp: `orderByChild('choferId').equalTo(dni)` |
 
 ```json
 {
@@ -510,185 +372,119 @@ Regla Firebase requerida:
 }
 ```
 
-### Nota sobre la creación de índices
+Un índice ausente no impide por sí solo una consulta de cliente, pero degrada
+el rendimiento y produce advertencia del SDK. La denegación por permisos se
+debe a la regla basada en consulta, no al índice: el conductor solo puede
+leer si `orderByChild` y `equalTo` coinciden con su DNI indexado. La candidata
+local declara `.indexOn: ["choferId"]`; su publicación no está certificada por
+esta auditoría.
 
-Los índices deben configurarse en la pestaña **Rules** de Firebase
-Console, que es la **única fuente autoritativa** de las reglas (ver la
-nota de niveles en §9). El repositorio **ya no mantiene un volcado local**
-de reglas (ver §10). Si la regla no está definida, la
-consulta desde DriverApp fallará en producción con un error de permiso o
-advertencia de cliente no optimizado.
+## 9. Reglas de Seguridad y Mínimo Privilegio
 
-## 9. Reglas de Seguridad y Mínimo Privilegio (RBAC)
+### Niveles de evidencia
 
-### Niveles de información sobre RTDB (no confundir)
+| Nivel | Fuente | Alcance |
+|-------|--------|---------|
+| **a. Contrato de datos** | Código de las tres apps | Rutas, campos, operaciones y validaciones de cliente |
+| **b. Candidata local** | `../FirebaseLab/rules/i03-i04.rules.json` | Reglas de laboratorio; no es un espejo versionado de producción |
+| **c. Permisos efectivos** | Firebase Console | Fuente autoritativa; no inspeccionada en esta auditoría |
 
-Esta sección describe **tres niveles distintos** que no deben mezclarse:
-
-1. **Contrato de datos (a)**: rutas y campos que las aplicaciones
-   efectivamente leen/escriben. Verificable en el código de cada app.
-   Es lo que documenta el resto de este archivo (§3–§6).
-2. **Reglas locales (b)**: la versión de reglas que en algún momento se
-   capturó en el repositorio (hoy **retirada**).
-   Era una captura histórica (S2), nunca una representación garantizada de
-   lo desplegado.
-3. **Permisos efectivos (c)**: las reglas realmente desplegadas en Firebase.
-   El repositorio por sí solo no certifica su estado actual. Se distingue
-   entre inspección directa y publicación/operación informadas por el usuario.
-
-**Corte I03/I04 — 03/11/2026:** el usuario confirmó la publicación y validó
-operaciones reales: AdminWeb administra, BurritoDriverApp autentica/carga
-asignación/inicia-detiene GPS y El Burrito muestra el bus y crea feedback
-con Auth UID. Previamente se aprobaron 72/72 pruebas de reglas y la
-integración funcional B2 en emuladores. La tabla siguiente corresponde a
-esa candidata publicada, contrastada con el código y la evidencia local;
-no es una nueva lectura ni certificación live de Firebase en esta fase.
-
-Referencia SHA-256 de la candidata publicada:
+La candidata local tiene SHA-256
 `0BFAC5C2D900F6900B3E975D6CEFA7A34DBC38DCF6929A4D5C4FD2BA283359C2`.
-I03/I04 introdujeron seis diferencias en `/choferes`, `/asignaciones` y
-`/comentarios`. No se copia ni se versiona aquí un volcado de reglas.
-La fuente autoritativa sigue siendo Firebase Console; cambios remotos
-posteriores requieren nueva comprobación. B2 se conserva aislado en
-AdminWeb `test/b2-adminweb-emulator` (`dc58daf`); no integra producción.
+FirebaseLab está fuera de un repositorio Git. `../FirebaseLab/firebase.json`
+apunta inicialmente a `database.rules.json`; la candidata completa es un
+archivo separado que debe seleccionarse explícitamente en las pruebas. Por tanto, **no se puede afirmar que esa candidata sea la
+política activa**.
 
-### Modelo de autorización admin (post-migración)
+Corte histórico I03/I04 (03/11/2026): el usuario informó la publicación y
+validó operaciones reales; se habían aprobado 72/72 pruebas de reglas y la
+integración B2 en emuladores. Es evidencia histórica, no una lectura live de
+Firebase en esta fase. No hay volcado versionado de las reglas desplegadas.
 
-El acceso a cada nodo de RTDB se controla mediante **Firebase Security
-Rules** basadas en la membresía del auth.uid en el nodo
-`/administradores`. El predicado central de autorización admin es:
+### Autorización administrativa
+
+Predicado central:
 
 ```
 root.child('administradores').child(auth.uid).exists()
 ```
 
-Esta expresión verifica que el UID del usuario autenticado exista como
-clave en `/administradores/`. A diferencia del modelo anterior
-(`/usuarios/{uid}/rol === 'admin'`), este predicado no es auto-escribible
-por el cliente: para escribir en `/administradores` hay que ser ya un
-administrador existente.
+La existencia de la clave concede acceso. El modelo anterior por
+`/usuarios/{uid}/rol` fue descartado porque el dueño podía autoasignarse
+`admin`. El primer administrador se crea en Consola; después, un admin
+existente puede crear otros desde AdminWeb.
 
-**Fundamento**: el modelo por `rol` en `/usuarios/{uid}` fue descartado
-porque la regla de escritura del propio usuario sobre su nodo permitía
-auto-asignarse `rol: 'admin'`. `/administradores` es una fuente de
-verdad que el cliente no puede autoasignarse; se puebla desde AdminWeb
-(y el primer administrador desde Consola).
+### Autorización de conductores
 
-### Modelo de autorización conductor (23/08/2026, ADR-023)
-
-La escritura sobre `/ubicacion_buses` exige que el usuario autenticado
-sea un conductor registrado. El predicado central de autorización
-conductor es:
+Predicado de tracking:
 
 ```
 root.child('choferes_uids').child(auth.uid).exists()
 ```
 
-Esta expresión verifica que el UID del usuario autenticado exista como
-clave en `/choferes_uids/`. El índice se escribe automáticamente al
-crear un conductor (`createChofer()`) y tiene `.write` exclusivo de admin,
-por lo que un usuario cualquiera no puede auto-indexarse. La regla
-completa de escritura del tracking admite conductores indexados **o**
-admins:
+La regla de escritura de `/ubicacion_buses` admite conductores indexados o
+administradores. `choferes_uids` solo lo escribe un admin, así que un usuario
+no puede autoindexarse. El índice se escribe al final de `createChofer()`;
+si falla, la postura es fail-closed. La existencia en el índice no comprueba
+que el conductor esté activo ni asignado al bus.
 
-```json
-".write": "auth != null && (root.child('administradores').child(auth.uid).exists() || root.child('choferes_uids').child(auth.uid).exists())"
-```
+### Permisos por nodo
 
-**Alternativa descartada**: autorizar por dominio de email
-(`auth.token.email.matches('.*@<dominio>')`). Se rechazó porque
-`SignUpScreen.tsx:83` acepta emails arbitrarios sin verificación
-(`emailVerified` no se consulta ni exige en ningún repo), por lo que un
-atacante podía registrarse con un correo del dominio permitido.
-
-**Postura fail-closed**: `/choferes_uids/{uid}` se escribe al final de
-`createChofer()`; si esa escritura falla, el conductor existe pero no
-puede publicar ubicación hasta reparar el índice manualmente desde
-Consola.
-
-### Tabla de permisos por nodo
-
-| Nodo | .read | .write | Notas |
-|------|-------|--------|-------|
+| Nodo | `.read` | `.write` | Notas |
+|------|---------|----------|-------|
 | `/usuarios/{uid}` | Solo dueño | Solo dueño | Perfil personal |
-| `/comentarios` | Denegada | Denegada en colección; creación de hijo nuevo con Auth UID propio y rating entero 1–5 | I04: validaciones §6; no editar ni borrar, tampoco mediante sesión admin |
-| `/administradores` | Solo admin existente | Solo admin existente | Primer admin por Consola; auth gate trata PERMISSION_DENIED como sin rol |
-| `/asignaciones` | Admin; conductor indexado solo con consulta `orderByChild('choferId').equalTo(dni)` correspondiente a su índice | Solo admin | I03: deniega listado sin filtro y consulta de otro conductor; `.indexOn: choferId` conservado; compatible con I08 |
-| `/ubicacion_buses` | `true` | Conductor indexado o admin | Lectura pública; escritura vía `/choferes_uids` o `/administradores` (ADR-023) |
-| `/choferes` | Colección solo admin; conductor indexado puede leer `/choferes/{suDni}` | Solo admin | I03: deniega estudiante, listado del conductor y perfil ajeno; las reglas consultan el índice internamente |
-| `/choferes_uids` | `false` | Solo admin | Índice uid→DNI para reglas (ADR-023); sin lectura de cliente |
+| `/comentarios` | Denegada | Colección denegada; creación de hijo propio con rating 1–5 | I04; sin editar ni borrar |
+| `/administradores` | Admin existente | Admin existente | Primer admin por Consola; `PERMISSION_DENIED` se trata como sin rol |
+| `/asignaciones` | Admin; conductor indexado solo con consulta `choferId` propia | Solo admin | Sin listado general para conductor; `.indexOn: choferId` |
+| `/ubicacion_buses` | `true` | Conductor indexado o admin | Lectura pública; escritura no ligada a asignación |
+| `/choferes` | Colección solo admin; conductor indexado solo su DNI | Solo admin | El índice se consulta internamente |
+| `/choferes_uids` | `false` | Solo admin | Índice uid→DNI; sin lectura de cliente |
 | `/buses` | Solo admin | Solo admin | Gestión exclusiva de administradores |
 
-### Discrepancias detectadas (S2) y resolución
+### Límites verificados
 
-Comparación entre la captura local de reglas (nivel b, hoy retirada)
-y la tabla histórica anterior. Se conserva el antecedente; para el corte
-actual prevalecen la tabla I03/I04 y su alcance de evidencia descrito arriba:
+1. **Tracking no ligado a asignación.** Cualquier conductor indexado o admin
+   puede escribir cualquier placa. Restringirlo a la asignación del día es
+   I09, postergada; no se agrega como tarea nueva.
+2. **Lectura pública de ubicaciones.** Cualquiera con la URL puede leer
+   `/ubicacion_buses`.
+3. **Feedback abierto.** No hay rate limiting, moderación, límite de longitud
+   ni lista cerrada de campos.
+4. **Desactivación sin cascada.** `activo: false` no cancela asignaciones, no
+   detiene tracking, no borra `/choferes_uids` y no revoca permisos.
+5. **Asignaciones no atómicas.** La exclusividad se valida antes de escribir;
+   no hay transacción ni restricción de unicidad en reglas.
+6. **Administración parcial.** `deleteAdmin()` deja la cuenta Auth; crear un
+   admin o conductor puede dejar cuentas huérfanas si falla una escritura
+   posterior.
+7. **Auditoría limitada.** `createdBy` no es seguridad y la pantalla actual no
+   lo muestra.
+8. **Reglas locales no certificadas.** La candidata de FirebaseLab no prueba
+   el estado desplegado; cambios remotos requieren nueva comprobación en
+   Console.
 
-1. **`/choferes` (.read)**: la tabla documentaba `Solo admin`, pero la
-   captura local de reglas permitía `.read: "auth != null"` — cualquier
-   usuario autenticado podía leer el directorio de conductores. El
-   `.write` sí coincidía (solo admin). La tabla se actualizó el 23/08/2026
-   para reflejar esa captura. **Resuelto por I03:** colección solo admin y
-   perfil propio para el conductor, publicado/validado según el corte 03/11.
-2. **Nodo legacy `/ubicacion_burrito`**: estaba presente en las reglas
-   con `.read: true`. **RESUELTO el 23/08/2026**: el bloque fue
-   eliminado de las reglas publicadas (denegado por defecto) y retirado
-   del espejo de reglas local (que ya no existe). Borrado del dato residual
-   en RTDB pendiente de Consola.
-3. **`/administradores` (.write)**: la tabla documentaba `.write: false`
-   (solo Consola), pero el permiso vigente permite que un administrador
-   ya existente cree otros administradores — que es exactamente lo que
-   hace AdminWeb (`createAdmin()`), con el primer administrador creado
-   por Consola. **RESUELTO**: la tabla se alineó al comportamiento real
-   del panel.
+### Antecedente S2
 
-### Predicado admin en reglas
-
-```json
-"admin": "auth != null && root.child('administradores').child(auth.uid).exists()"
-```
-
-Este predicado reemplaza al anterior:
-```
-// ELIMINADO — vulnerable a auto-asignación:
-"auth != null && root.child('usuarios').child(auth.uid).child('rol').val() === 'admin'"
-```
-
-### Riesgos residuales aceptados (MVP)
-
-1. **Escritura en `/ubicacion_buses`**: tras ADR-023 (23/08/2026) la
-   escritura está restringida a conductores indexados en `/choferes_uids`
-   o a administradores; ya no la puede hacer "cualquier usuario
-   autenticado". Sí persiste que **no** se verifica que el conductor esté
-   asignado al bus del día. Restringir la escritura al conductor asignado
-   sigue planificado (ver "Mejora planificada" en esta misma sección).
-2. **Lectura en `/ubicacion_buses`**: es pública (`true`). Cualquier
-   persona con la URL de la base de datos puede leer ubicaciones en
-   vivo.
-3. **Escritura en `/comentarios`**: I04 ya exige creación, UID propio,
-   rating entero 1–5 y tipos de campos opcionales (§6). Aún no hay rate
-   limiting, moderación, límite de longitud ni lista cerrada de campos.
-
-### Mejora planificada (Fase 4/5)
-
-Restringir la escritura en `/ubicacion_buses/{placa}` para que solo el
-conductor asignado al bus (según `/asignaciones`) pueda escribir
-coordenadas. Esto requiere una regla que cruce
-`root.child('asignaciones')` con el UID o DNI del conductor
-autenticado.
+La captura local retirada documentó diferencias en `/choferes`, el nodo legacy
+y `/administradores`. I03/I04, ADR-023 y ADR-025 resolvieron o alinearon esos
+puntos. No se conserva como contrato vigente; sirve solo como antecedente.
 
 ## 10. Referencias Cruzadas
 
 | Documento | Relación |
 |-----------|----------|
-| `PROJECT_CONTEXT.md` | Visión general del sistema, propósito y limitaciones. |
-| `ARCHITECTURE.md` | Flujo de datos, ciclo de vida del tracking y topología del ecosistema. |
-| Reglas desplegadas | Única fuente autoritativa: Firebase Console (nivel c). No hay volcado local de reglas en el repositorio. |
-| `TROUBLESHOOTING.md` | Incidentes relacionados con Firebase: persistence, path mismatch, regresiones, async initializeApp. |
-| `DECISIONS.md` | ADR sobre persistence desactivada, arquitectura serverless, migración del panel admin, dominios por rol y fix async initializeApp. |
-| `AdminWeb/README.md` | Setup del panel web, auth admin y convenciones de correo. |
-| `Driver/README.md` | Setup de Firebase, permisos Android y google-services.json. |
-| `User/README.md` | Setup de Firebase, .env y google-services.json. |
-| `ROADMAP.md` | Planificación posterior al MVP relacionada con la evolución del esquema. |
-| `BUGS_RESUELTOS/` | Historial de bugs relacionados con Firebase RTDB. |
+| `PROJECT_CONTEXT.md` | Propósito, estado y limitaciones generales |
+| `ARCHITECTURE.md` | Flujo de datos, ciclo de tracking y topología |
+| `TROUBLESHOOTING.md` | Incidentes de persistencia, paths y tracking |
+| `DECISIONS.md` | ADR-003, ADR-019, ADR-023 a ADR-028 y ADR-030 |
+| `../AdminWeb/README.md` | Panel, auth admin y convenciones de correo |
+| `../Driver/README.md` | Setup, permisos Android y tracking |
+| `../User/README.md` | Setup, entorno y lectura de tracking |
+| `ROADMAP.md` | Fases y tareas post-MVP; I09 es una referencia, no un requisito actual |
+| `BUGS_RESUELTOS/` | Historial de bugs de RTDB y tracking |
+| `../FirebaseLab/rules/i03-i04.rules.json` | Candidata local; no certifica producción |
+
+Firebase Console es la fuente autoritativa de las reglas efectivas. No existe
+un volcado versionado de producción en este repositorio. Un cambio de path o
+de contrato debe sincronizar `PROJECT_CONTEXT.md`, `ARCHITECTURE.md` y los
+READMEs/AGENTS de las apps afectadas.

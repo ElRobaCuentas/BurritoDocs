@@ -27,7 +27,7 @@ La propuesta histórica de caducidad a los 60 s no es trabajo pendiente.
 
 | Tarea | Proyecto | Estado | Depende de | Alcance y validación |
 |-------|----------|--------|------------|---------------------|
-| T4.2 — Control de turnos y creación de `/recorridos` | BurritoDriverApp | Parcial | T4.1 | INICIAR/DETENER ya existen; falta registrar `/recorridos` (FIREBASE_SCHEMA §4). No equivale a los turnos informativos de I08 (ADR-027). |
+| T4.2 — Control de turnos y creación de `/recorridos` | BurritoDriverApp | Parcial | T4.1 | INICIAR/DETENER ya existen; falta registrar `/recorridos` (FIREBASE_SCHEMA §7). No equivale a los turnos informativos de I08 (ADR-027). |
 | T4.4 — Render multi-bus completo | El Burrito | Pendiente | T3.2 | ShapeSource + SymbolLayer por cada bus activo. |
 | T4.5 — Monitor de flota | AdminWeb | Pendiente | T4.4 | Sección «Flota en servicio ahora». |
 | T4.6 — Estadísticas de recorridos | El Burrito | Pendiente | T4.2 | StatsScreen con métricas de recorridos. |
