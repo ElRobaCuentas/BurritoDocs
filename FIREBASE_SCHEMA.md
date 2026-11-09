@@ -109,14 +109,14 @@ que el proceso de tracking siga vivo.
 completo antes de actualizar el store:
 
 - Rechaza tipos incorrectos, coordenadas fuera de rango, `timestamp` no
-  entero/negativo y timestamps futuros más allá de `receivedAt + 300 000 ms`.
+  entero o `<= 0` y timestamps futuros más allá de `receivedAt + 300 000 ms`.
   El límite exacto es aceptado.
 - Acepta campos ausentes/null. I06-A normaliza latitud/longitud a `0` y
   `timestamp` a `Date.now()`; es una limitación aceptada desde el 30/10.
   `heading` y `speed` no se validan y usan `0` por defecto.
-- Si `isActive: false`, no exige coordenadas válidas. El store marca
-  `coordinatesValid: false` como metadato local y, si había una posición
-  previa, conserva las coordenadas anteriores.
+- Si `isActive: false`, no exige coordenadas válidas. MapService asigna
+  `coordinatesValid: false` como metadato local; el store consume ese metadato
+  y, si había una posición previa, conserva las coordenadas anteriores.
 - El filtro temporal acepta una transición activo→inactivo con el mismo
   `timestamp`; fuera de ese caso rechaza timestamps anteriores o iguales.
   Un dato rechazado no renueva la posición ni la caducidad previa.
