@@ -8,7 +8,10 @@ Dos piezas complementarias. Primera: userStore.ts con Zustand + middleware persi
 Archivo
 userStore.ts, App.tsx
 Estado
-Resuelto
+Resuelto — validación local.
+
+La implementación actual reconcilia el estado persistido con `firebaseUser` mediante `auth().onAuthStateChanged`, sin consultar la red. No verifica remotamente la vigencia, revocación o eliminación de la cuenta: una cuenta eliminada en Firebase Console no se detecta de forma inmediata por este watchdog. Su alcance es evitar sesiones locales huérfanas, no validar el token contra el servidor.
+
 Lección
 Un Context de React vive mientras la app está abierta — es memoria volátil. AsyncStorage es el disco duro del teléfono — persiste entre sesiones. Firebase Auth ya gestiona la persistencia del token de Google internamente; no hay que guardarlo manualmente. La arquitectura correcta es: AsyncStorage como caché de arranque rápido (sin red) + Firebase Auth como árbitro final de validez de sesión (local, sin red). Nunca bloquear el splash con llamadas a la base de datos — el watchdog debe correr en segundo plano sin detener la experiencia del usuario.
 
@@ -23,7 +26,10 @@ Obtener el SHA-1 del keystore de release con keytool -list -v -keystore android/
 Archivo
 android/app/google-services.json
 Estado
-Resuelto
+Resuelto — procedimiento histórico; nombres actuales en la nota de vigencia.
+
+> Nota de vigencia (rebranding): el procedimiento anterior conserva los nombres usados cuando se resolvió el caso. Hoy el `applicationId` es `com.sythor.burritoapp` (`android/app/build.gradle:30-32`) y el keystore de release presente en `android/app/` es `my-release-key.keystore`; la ruta efectiva de firma se toma de `keystore.properties`, que no se inspeccionó por ser sensible. Para una release actual, el SHA-1 debe obtenerse y registrarse para esos nombres; `burrito-release.keystore` y `com.burritouserapp` son históricos. Tampoco se inspeccionó `google-services.json`.
+
 Lección
 Existen 3 entornos con SHA-1 distintos que deben registrarse por separado en Firebase: (1) Debug — debug.keystore automático de Android, obtenido con ./gradlew signingReport; (2) Release — el keystore propio del proyecto, obtenido con keytool; (3) Play Store — Google re-firma el APK con su propio certificado al publicarlo, el SHA-1 se obtiene desde Google Play Console → App signing. Los tres deben estar registrados en Firebase antes del lanzamiento. El google-services.json se compila dentro del APK, por lo que cualquier cambio en Firebase que lo afecte requiere recompilar.
 
@@ -66,7 +72,10 @@ Se desactivó temporalmente para depuración de GPS crudo y se determinó que la
 Archivos
 Map.tsx 
 Estado
-Desactivado / Pendiente
+Desactivado — sin implementación planificada (estado histórico: "Desactivado / Pendiente").
+
+La funcionalidad sigue desactivada (`snapToRoute` está comentado en `Map.tsx`). No existe una tarea de implementación registrada en `ROADMAP.md` ni en `MVP.md`; no debe presentarse como trabajo activo. La condición técnica histórica —proyección geométrica sobre segmentos de la polyline— se conserva como referencia, no como tarea aprobada.
+
 Lección
 El "ajuste a la ruta" es peligroso si los datos de entrada tienen ruido. Primero estabiliza el GPS, luego aplica la restricción geométrica.
 
@@ -89,7 +98,10 @@ Se agregó foregroundServiceType: ['location' as const] dentro de getBackgroundO
 Archivos
 SendCoordinates.tsx 
 Estado
-En Observación 
+En Observación (DriverApp; referencia histórica, no caso funcional de UserApp).
+
+Se conserva la nota de revisión del 2026-10-16: el incidente pertenece a la DriverApp y quedó registrado aquí por error. No se elimina ni se renumera; tampoco computa en el inventario funcional de la UserApp.
+
 Lección
 En Android 14 no basta con declarar foregroundServiceType en el Manifest. El mismo tipo debe enviarse también al iniciar el Foreground Service; de lo contrario, Android finaliza el proceso aunque todos los permisos estén correctamente configurados. 
 
@@ -141,7 +153,9 @@ Archivo:
 User/src/features/map/screen/MapScreen.tsx
 
 Estado:
-Resuelto — PR #5 (merge pendiente).
+Resuelto — PR #5 integrado en `main` (`0e700ec`, 2026-08-05).
+
+Estado histórico al cierre: "PR #5 (merge pendiente)". El cleanup actual de `MapScreen.tsx` invoca `actions.stopTracking()` al desmontar, según lo validado en este caso.
 
 Lección:
 El patrón `startTracking` en el montaje exige su contraparte en el cleanup.
@@ -185,7 +199,11 @@ Archivo:
 User/src/store/burritoLocationStore.ts (límite documentado)
 
 Estado:
-Resuelto (C4.5) / Límite trasladado a C4.8 y C4.6
+C4.5 resuelto para fallos del listener y estados vacíos de arranque.
+
+C4.6 mitiga el síntoma de posición congelada al ocultar el bus cuando el timestamp supera los 30 s; no detecta conectividad ni muestra un overlay de red durante la sesión.
+
+C4.8 (NetInfo) no está implementado ni figura como tarea planificada en `ROADMAP.md` ni en `MVP.md`. El estado histórico era "Resuelto (C4.5) / Límite trasladado a C4.8 y C4.6"; se conserva como antecedente, no como tarea vigente.
 
 Lección:
 El timeout de arranque y la conectividad son dos conceptos distintos. Un
@@ -236,7 +254,9 @@ android/app/src/main/res/values/styles.xml,
 android/app/src/main/res/drawable-*/bootsplash_logo.png
 
 Estado:
-Resuelto — rama feat/rebranding/newlogo.
+Resuelto e integrado en `main` mediante `81d5462` (2026-08-10), que incorpora `c644622` de `feat/rebranding/newlogo`.
+
+La app actual usa solo el splash nativo (`BootSplash`); `AnimatedSplash.tsx` no existe. El estado histórico al cierre era "Resuelto — rama feat/rebranding/newlogo".
 
 Lección:
 Un splash gestionado desde JS por encima del splash nativo crea una
@@ -272,9 +292,11 @@ siguiente publicación normal sí se almacena. TypeScript pasa; lint global
 mantiene 21 errores/50 warnings previos, cero diagnósticos en archivos tocados.
 
 **Estado:** corregido y verificado localmente en `011a4b6`
-(`fix/i06-future-timestamps`), pendiente de revisión,
-integración/push y APK actualizado. No se desplegó ni se probó en Android
-esta corrección; la jornada de ~8 h sigue pendiente.
+(`fix/i06-future-timestamps`). El estado registrado el 03/11 era "pendiente
+de revisión, integración/push y APK actualizado"; a la fecha está integrado
+y publicado en `main`/`origin/main`. La validación del APK/Android no está
+acreditada: no se desplegó ni se probó en Android esta corrección; la
+jornada de ~8 h sigue pendiente.
 
 **Límite:** tolerancia autorizada, no sincronización horaria. Desfases
 persistentes pueden descartar datos, y adelantos dentro del margen pueden
