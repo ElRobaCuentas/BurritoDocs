@@ -9,19 +9,64 @@ consideradas y el razonamiento detrás de la solución adoptada.
 No es un manual técnico ni un changelog. Las decisiones aquí documentadas
 responden a la pregunta: **¿por qué está hecho así?**
 
+La implementación actual, la evidencia de integración y los límites de
+validación se indican cuando aportan contexto a la decisión; los contratos
+detallados y los procedimientos viven en los documentos referenciados.
+
 ## 2. Convenciones del Documento
 
-Cada ADR sigue esta estructura:
+Cada ADR conserva la decisión original y, cuando corresponde, notas de
+evolución posteriores. La estructura de referencia es:
 
-- **Estado**: Aceptada, Planeada, Sustituida o Experimental.
+- **Estado**: situación actual de la decisión (`Vigente`, `Sustituida`,
+  `Experimental`, `Pendiente` o `Histórica`).
 - **Contexto**: situación que originó la decisión.
 - **Decisión**: qué se decidió y cómo se implementó.
-- **Alternativas consideradas**: opciones que fueron evaluadas y
-  descartadas.
-- **Consecuencias**: impacto positivo y negativo de la decisión.
+- **Alternativas consideradas**: opciones evaluadas y descartadas.
+- **Consecuencias**: impacto positivo, negativo y límites.
 - **Referencias**: documentos relacionados.
 
-## ADR Aceptadas
+Los estados del índice describen la vigencia de la decisión. Los cuerpos
+conservan el estado histórico (`Aceptada`, `Planeada`, etc.) cuando forma
+parte del registro original. Los estados no describen el grado de
+implementación ni la validación física: una integración en Git no acredita
+una prueba de campo, y una decisión aceptada no convierte por sí sola una
+funcionalidad planificada en implementada.
+
+## 3. Índice de decisiones
+
+| ADR | Tema | Estado actual |
+|---|---|---|
+| ADR-003 | Persistencia local de Firebase | Vigente, con precisión |
+| ADR-004 | Arquitectura serverless directa | Vigente |
+| ADR-005 | Estado con Zustand | Vigente |
+| ADR-006 | Separación de apps móviles | Vigente, ampliada por ADR-025 |
+| ADR-007 | Comunicación por RTDB | Vigente |
+| ADR-008 | Foreground Service | Vigente |
+| ADR-009 | Autenticación segmentada por roles | Sustituida por ADR-017 y ADR-025 |
+| ADR-010 | Gestión manual del tracking | Sustituida por ADR-026 |
+| ADR-011 | Instancia secundaria de Auth | Sustituida por ADR-025 |
+| ADR-012 | DriverApp solo Android | Vigente |
+| ADR-013 | Geofencing con Punto Cero Dinámico | Pendiente (post-MVP) |
+| ADR-014 | Backend propio | Pendiente (visión, sin ejecución aprobada) |
+| ADR-015 | Dashboard web de flota y analítica | Pendiente; administración parcial en AdminWeb |
+| ADR-016 | Listener multi-bus | Vigente |
+| ADR-017 | Panel admin en DriverApp y autorización UID | Sustituida parcialmente por ADR-025; autorización UID vigente |
+| ADR-018 | Inicialización asíncrona de SecondaryApp | Histórica; implementación sustituida por ADR-025 |
+| ADR-019 | Heartbeat de presencia | Vigente, validación actualizada |
+| ADR-020 | Estrategia C de movimiento | Experimental |
+| ADR-021 | Splash nativo único | Vigente |
+| ADR-022 | Retiro de «Seguir Bus» | Vigente |
+| ADR-023 | Autorización GPS por UID→DNI | Vigente, alcance limitado |
+| ADR-024 | Auditoría de asignaciones y «desactivar» | Vigente, con evolución |
+| ADR-025 | Migración a AdminWeb y dominios por rol | Vigente |
+| ADR-026 | Separación detener recorrido/logout | Vigente, con evolución I07 |
+| ADR-027 | Turnos informativos y un bus por conductor/fecha | Vigente |
+| ADR-028 | Validación diaria y respaldo offline | Vigente, con precisión |
+| ADR-029 | Minimización de datos y Crashlytics | Vigente |
+| ADR-030 | Tolerancia a timestamps futuros | Vigente; integrada en `main`, validación física pendiente |
+
+## 4. Decisiones
 
 ### ADR-003: Desactivación de persistencia local en Firebase
 
@@ -35,9 +80,11 @@ aparecía en posiciones desactualizadas al recuperar la conexión.
 
 **Decisión:**
 
-Desactivar explícitamente la persistencia en disco de Firebase
-(`setPersistenceEnabled(false)`). El código actual de DriverApp
-`index.js` contiene la explicación como comentario.
+Desactivar la persistencia en disco de Firebase en el emisor de tracking.
+La implementación eliminó `setPersistenceEnabled(true)` y dejó el valor
+predeterminado del SDK (persistencia en disco desactivada); no existe una
+llamada explícita a `setPersistenceEnabled(false)`. DriverApp `index.js`
+conserva la explicación como comentario.
 
 **Alternativas consideradas:**
 
@@ -50,10 +97,19 @@ Desactivar explícitamente la persistencia en disco de Firebase
 - La ubicación en tiempo real es un dato efímero. Si el dispositivo
   pierde conexión 30 segundos, al recuperar la señal no tiene valor
   operativo procesar coordenadas históricas.
-- La app no retiene la última posición conocida en modo offline. Es
-  aceptable dado el propósito del sistema.
+- La persistencia en disco queda desactivada por defecto. Esto no implica
+  descartar todas las escrituras offline: el SDK puede conservar pendientes
+  en memoria y confirmarlas al reconectar. El filtro temporal de la UserApp
+  y la expiración acotan su efecto (ver ADR-019, ADR-026 y ADR-030).
 
-**Referencias:** ARCHITECTURE.md (sección 8), index.js de DriverApp.
+**Evolución posterior:** el filtrado por marcas de tiempo descartado en la
+decisión original terminó implementándose en la UserApp para descartar
+lecturas fuera de orden (`burritoLocationStore.ts`). Se conserva como
+evolución de la implementación, no como parte de la decisión inicial.
+
+**Referencias:** ARCHITECTURE.md (sección 8), FIREBASE_SCHEMA.md
+(sección 7), index.js de DriverApp, BUGS_RESUELTOS/driverapp.md
+(CASOS 002 y 020).
 
 ---
 
@@ -118,12 +174,18 @@ renderizado de la UI.
 **Consecuencias:**
 
 - El listener de Firebase muta el store fuera del flujo de React.
-- `Map.tsx` usa selectores estrictos para escuchar únicamente los
-  cambios de coordenadas.
-- Mapbox recibe el dato refinado e interpola la posición en su canvas
-  nativo, manteniendo 60 FPS estables.
+- `Map.tsx` recibe `locations` del store y deriva el bus a mostrar; no
+  escucha únicamente un par de coordenadas.
+- La animación de posición usa `RNAnimated` con `useNativeDriver: false`;
+  el objetivo es evitar re-renderizados costosos, no una medición de
+  60 FPS.
 - Dependencia externa de gestión de estado, justificada por el control
   de rendimiento que ofrece.
+
+**Evolución/aclaración:** el argumento contra Context se refiere al flujo
+de tracking de UserApp. AdminWeb usa un `SessionContext` acotado para la
+sesión administrativa; eso no contradice la elección de Zustand para el
+estado de tracking.
 
 **Referencias:** ARCHITECTURE.md (sección 4, stores de Zustand).
 
@@ -163,8 +225,13 @@ configuración nativa.
 - El código compartido (como la referencia a Firebase) debe mantenerse
   sincronizado manualmente entre proyectos.
 
+**Evolución posterior (ADR-025):** la separación de las dos apps móviles
+se mantiene. El ecosistema incorporó AdminWeb como tercera aplicación y
+cada producto tiene historial Git independiente. La decisión original
+sobre las apps móviles no se reescribe.
+
 **Referencias:** PROJECT_CONTEXT.md (sección 2), ARCHITECTURE.md
-(sección 2).
+(sección 2), ADR-025.
 
 ---
 
@@ -391,8 +458,8 @@ implementa con una **app temporal por operación** (`initializeApp(config,
 no con `SecondaryApp`. El dominio `${dni}@burritodriver.com` citado en el
 Contexto corresponde al modelo anterior.
 
-**Referencias:** ARCHITECTURE.md (sección 4, módulo admin),
-FIREBASE_SCHEMA.md (sección 4), ADR-025.
+**Referencias:** ARCHITECTURE.md (§3.1, AdminWeb; antecedente histórico
+en §3), FIREBASE_SCHEMA.md (sección 4), ADR-025.
 
 ---
 
@@ -432,6 +499,100 @@ pero no está soportada ni probada.
 
 ---
 
+### ADR-013: Geofencing con Punto Cero Dinámico
+
+**Estado:** Pendiente (post-MVP).
+
+**Contexto:**
+
+Se requiere automatizar el conteo de vueltas y el ciclo de vida de los
+recorridos sin forzar al conductor a interactuar con la pantalla
+mientras conduce.
+
+**Decisión definida:**
+
+Implementar un Punto Cero Dinámico calculado en el dispositivo mediante
+la fórmula de Haversine con un umbral de detección de 40 metros. La
+función `calculateDistance()` existe en
+`User/src/features/map/utils/geo.ts` y se usa para calcular distancias
+en el store; no implementa geofencing ni un Punto Cero Dinámico.
+
+**Por qué esta dirección:**
+
+- El campus de la UNMSM sufre cambios estructurales constantes
+  (obras, eventos), lo que invalida coordenadas fijas.
+- El umbral de 40 metros absorbe el error de ±10–15m del efecto
+  multipath en el campus.
+- Un radio menor (20m) provocaba cierres falsos por imprecisión del
+  GPS. Un radio mayor podría causar cierres prematuros.
+
+**Precisión de vigencia:** el radio original de 40 m y la histéresis
+40/80 m registrada en ROADMAP.md son antecedentes de diseño que todavía
+deben reconciliarse. La evidencia de la prueba de 20 m no está
+identificada en este documento. No se fija aquí un parámetro definitivo.
+
+**Dependencia:** requiere tracking consolidado; ver ROADMAP.md (prerrequisitos de tracking y dependencia T4.2 de T4.3).
+
+**Referencias:** ROADMAP.md (T4.3).
+
+---
+
+### ADR-014: Backend propio
+
+**Estado:** Pendiente (visión de largo plazo, sin ejecución aprobada).
+
+**Contexto:**
+
+A medida que el sistema crezca, Firebase RTDB puede volverse
+insuficiente para lógica de negocio compleja, reglas de seguridad
+dinámicas o integración con servicios externos.
+
+**Decisión definida:**
+
+Incorporar un backend propio (Node.js o similar) para centralizar
+lógica, reglas de negocio y servir como intermediario entre las apps
+y la base de datos.
+
+**Dependencia:** sin fecha estimada. Visión de largo plazo.
+
+**Referencias:** ROADMAP.md (Visión futura sin aprobación de ejecución).
+
+---
+
+### ADR-015: Dashboard Web de Monitoreo y Analítica
+
+**Estado:** Pendiente; alcance parcialmente cubierto por AdminWeb.
+
+**Contexto:**
+
+Al momento de la decisión no existía una interfaz web para visualizar la
+flota completa, acceder a estadísticas operativas, reportes diarios,
+métricas de recorridos ni administración avanzada.
+
+**Decisión definida:**
+
+Desarrollar una aplicación web independiente que consuma los datos de
+Firebase RTDB (o del backend propio, cuando exista) para proporcionar:
+
+- Mapa de flota completa con todos los buses activos.
+- Reportes diarios y semanales de recorridos.
+- Métricas de tiempos de espera, ocupación, rutas más usadas.
+- Administración avanzada de conductores, buses y asignaciones
+  (cubierta por AdminWeb/ADR-025).
+- Analítica histórica.
+
+**Evolución (ADR-025):** AdminWeb ya cubre la administración de
+conductores, buses y asignaciones. El mapa de flota completa, los
+reportes, las métricas y la analítica histórica siguen pendientes. La
+dependencia respecto de ADR-014 no está definida: este ADR admite
+consumir RTDB directamente o un backend futuro.
+
+**Dependencia:** sin fecha estimada. Visión de largo plazo.
+
+**Referencias:** ROADMAP.md (Visión futura sin aprobación de ejecución).
+
+---
+
 ### ADR-016: Migración a listener multi-bus con fallback al primer bus activo
 
 **Estado:** Aceptada.
@@ -463,8 +624,8 @@ por bus en T4.4.
   descartado. Habría duplicación de suscripciones y el store tendría dos
   fuentes de verdad parcialmente solapadas.
 - Migrar directamente a render multi-marcador en el mismo cambio:
-  descartado por §5.6 (no expandir alcance). El cambio se dividió en
-  lógica de datos (T3.1) y renderizado (T4.4).
+  descartado por `User/AGENTS.md` §5.6 (no expandir alcance). El cambio
+  se dividió en lógica de datos (T3.1) y renderizado (T4.4).
 
 **Consecuencias:**
 
@@ -487,7 +648,8 @@ por bus en T4.4.
 
 ### ADR-017: Migración del panel admin a DriverApp + autorización por auth.uid
 
-**Estado:** Sustituida por ADR-025.
+**Estado:** Sustituida parcialmente por ADR-025; la autorización por
+`auth.uid`/`/administradores` sigue vigente.
 
 **Contexto:**
 
@@ -553,14 +715,15 @@ también evolucionó: el permiso vigente permite que un administrador
 existente cree otros administradores desde AdminWeb (`createAdmin()`),
 y solo el primer administrador se crea en Consola (bootstrap).
 
-**Referencias:** ARCHITECTURE.md (sección 3), FIREBASE_SCHEMA.md
-(secciones 4, 9), MVP.md (TA.1, TA.2, TA.3, TA.4), ADR-025.
+**Referencias:** ARCHITECTURE.md (§3.1, AdminWeb; antecedente histórico
+en §3), FIREBASE_SCHEMA.md (secciones 4, 9), MVP.md (los identificadores
+originales TA.1–TA.4 ya no están vigentes), ADR-025.
 
 ---
 
 ### ADR-018: Corrección de inicialización asíncrona de SecondaryApp
 
-**Estado:** Aceptada.
+**Estado:** Aceptada históricamente; implementación sustituida por ADR-025.
 
 **Contexto:**
 
@@ -614,157 +777,15 @@ try {
   variable está tipada como `FirebaseApp`, no como `any`).
 - Se modificó 1 archivo (`admin_service.ts`), 3 líneas en total.
 
-**Referencias:** ARCHITECTURE.md (sección 3, módulo admin),
-TROUBLESHOOTING.md (sección 10), admin_service.ts.
+**Vigencia:** esta corrección pertenece al módulo administrativo móvil que
+usaba React Native Firebase. AdminWeb usa el SDK JS y apps temporales
+(ADR-025); el problema de la Promise de `initializeApp()` de
+`@react-native-firebase/app` no se traslada automáticamente a ese SDK.
+
+**Referencias:** ARCHITECTURE.md (§3.1, AdminWeb; antecedente histórico en
+§3), TROUBLESHOOTING.md (§5, Autenticación), admin_service.ts, ADR-025.
 
 ---
-
-### ADR-021: Splash nativo único (react-native-bootsplash) en lugar de AnimatedSplash
-
-**Estado:** Aceptada.
-
-**Contexto:**
-
-La UserApp tenía una doble capa de splash: el tema nativo de arranque
-(`BootTheme` de `react-native-bootsplash`) y un overlay JS
-(`AnimatedSplash.tsx`, animación Lottie) montado en `App.tsx` con
-`zIndex: 999` sobre `StyleSheet.absoluteFill`. Al terminar la animación
-JS, `onFinish` desmontaba el overlay y el fondo `#00AEEF` (cian) del
-`GestureHandlerRootView` quedaba expuesto en el instante de la
-transición hacia `WelcomeScreen`, provocando un "flash cian". El
-`StatusBar` además dependía de `showAnimatedSplash`, forzando un cambio
-de color abrupto.
-
-**Decisión:**
-
-Eliminar `AnimatedSplash.tsx` por completo y dejar el splash nativo de
-`react-native-bootsplash` (dependencia ya presente, `^7.1.0`) como única
-capa. El splash se oculta en `onReady` del `NavigationContainer`:
-
-```typescript
-<NavigationContainer
-  onReady={() => {
-    requestAnimationFrame(() => BootSplash.hide({ fade: true }));
-  }}
->
-```
-
-De esta forma el splash nativo cubre el arranque, la hidratación de los
-stores y el primer paint del árbol de navegación; al ocultarse con fade,
-la primera pantalla ya está lista y no hay flash. El `StatusBar` deja de
-depender del estado del splash.
-
-**Alternativas consideradas:**
-
-- Mantener el overlay JS ajustando solo los colores: descartado, no
-  elimina la doble capa ni el flash de transición.
-- Ocultar el splash con un temporizador fijo: descartado, no garantiza
-  que la navegación ya esté pintada (mismo problema de flash o splash
-  recortado).
-- Ocultar apenas completada la hidratación (`_hasHydrated`): descartado,
-  podía revelar la pantalla antes del primer paint de React Navigation.
-
-**Consecuencias:**
-
-- Una sola capa de splash, controlada por el ciclo de vida real del
-  árbol de navegación (`onReady`).
-- El arranque muestra el logo oficial, regenerado desde
-  `assets/splash_logo.png` en `drawable-*/bootsplash_logo.png` y
-  `assets/bootsplash/*`. El launcher usa `mipmap-*/ic_launcher*.png`.
-- Se eliminó `src/app/screen/AnimatedSplash.tsx`; `App.tsx` ya no usa
-  `useState` para el splash ni el overlay absoluto.
-- No se agregó ninguna dependencia nueva: `react-native-bootsplash`
-  ya estaba en `package.json` (`^7.1.0`).
-
-**Referencias:** ARCHITECTURE.md (sección 4), BUGS_RESUELTOS/userapp.md
-(CASO 018).
-
----
-
-## ADR Planificadas
-
-### ADR-013: Geofencing con Punto Cero Dinámico
-
-**Estado:** Planeada.
-
-**Contexto:**
-
-Se requiere automatizar el conteo de vueltas y el ciclo de vida de los
-recorridos sin forzar al conductor a interactuar con la pantalla
-mientras conduce.
-
-**Decisión definida:**
-
-Implementar un Punto Cero Dinámico calculado en el dispositivo mediante
-la fórmula de Haversine con un umbral de detección de 40 metros. La
-función `calculateDistance()` ya existe en `Map.tsx` pero no está
-activa.
-
-**Por qué esta dirección:**
-
-- El campus de la UNMSM sufre cambios estructurales constantes
-  (obras, eventos), lo que invalida coordenadas fijas.
-- El umbral de 40 metros absorbe el error de ±10–15m del efecto
-  multipath en el campus.
-- Un radio menor (20m) provocaba cierres falsos por imprecisión del
-  GPS. Un radio mayor podría causar cierres prematuros.
-
-**Dependencia:** requiere tracking consolidado; ver ROADMAP.md (prerrequisitos de tracking y dependencia T4.2 de T4.3).
-
-**Referencias:** ROADMAP.md (T4.3).
-
----
-
-### ADR-014: Backend propio
-
-**Estado:** Planeada.
-
-**Contexto:**
-
-A medida que el sistema crezca, Firebase RTDB puede volverse
-insuficiente para lógica de negocio compleja, reglas de seguridad
-dinámicas o integración con servicios externos.
-
-**Decisión definida:**
-
-Incorporar un backend propio (Node.js o similar) para centralizar
-lógica, reglas de negocio y servir como intermediario entre las apps
-y la base de datos.
-
-**Dependencia:** sin fecha estimada. Visión de largo plazo.
-
-**Referencias:** ROADMAP.md (Visión futura sin aprobación de ejecución).
-
----
-
-### ADR-015: Dashboard Web de Monitoreo y Analítica
-
-**Estado:** Planeada.
-
-**Contexto:**
-
-Actualmente no existe una interfaz web para visualizar la flota
-completa, acceder a estadísticas operativas, reportes diarios,
-métricas de recorridos ni administración avanzada.
-
-**Decisión definida:**
-
-Desarrollar una aplicación web independiente que consuma los datos de
-Firebase RTDB (o del backend propio, cuando exista) para proporcionar:
-
-- Mapa de flota completa con todos los buses activos.
-- Reportes diarios y semanales de recorridos.
-- Métricas de tiempos de espera, ocupación, rutas más usadas.
-- Administración avanzada de conductores, buses y asignaciones.
-- Analítica histórica.
-
-**Dependencia:** sin fecha estimada. Visión de largo plazo.
-
-**Referencias:** ROADMAP.md (Visión futura sin aprobación de ejecución).
-
----
-
-## ADR Aceptadas (continuación)
 
 ### ADR-019: Heartbeat de presencia en la DriverApp (T4.1)
 
@@ -807,7 +828,9 @@ Expiración → C4.6 en la UserApp (timestamp demasiado viejo)
 ```
 
 El `timestamp` mantiene su nombre y pasa a significar "última
-actualización publicada por el Driver", no "momento del fix GPS".
+actualización publicada por el Driver", no "momento del fix GPS". Se
+captura al intentar publicar, antes de la confirmación del SDK; no
+identifica el momento del fix ni un ACK de RTDB.
 
 **Alternativas consideradas:**
 
@@ -824,11 +847,16 @@ actualización publicada por el Driver", no "momento del fix GPS".
 - El watchdog C3 ya no reinicia el servicio con bus quieto.
 - Costo de batería mínimo: una escritura extra cada 8 s solo cuando el
   GPS no escribió.
-- Pendiente de validación en campo con el Motorola (Grupo A): verificar
-  que el heartbeat publica realmente con el GPS quieto.
+- **Validación:** dos sesiones de campo registraron deltas de
+  8003–8005 ms y la corrección se integró históricamente en `99eafa0`
+  (`BUGS_RESUELTOS/driverapp.md`, CASO 019). Esto acredita el latido con
+  GPS quieto en esa prueba; no acredita una jornada completa ni elimina
+  el límite I10 (reutilización de un fix anterior).
 
 **Referencias:** ARCHITECTURE.md (sección 5 y 8), FIREBASE_SCHEMA.md
-(sección 3), ROADMAP.md (prerrequisito T4.1).
+(sección 3), ROADMAP.md (prerrequisito T4.1),
+BUGS_RESUELTOS/driverapp.md (CASO 019), Driver commit `99eafa0`
+(merge `2f41cd1`).
 
 ---
 
@@ -924,6 +952,68 @@ AGENTS.md (UserApp, sección 9).
 
 ---
 
+### ADR-021: Splash nativo único (react-native-bootsplash) en lugar de AnimatedSplash
+
+**Estado:** Aceptada.
+
+**Contexto:**
+
+La UserApp tenía una doble capa de splash: el tema nativo de arranque
+(`BootTheme` de `react-native-bootsplash`) y un overlay JS
+(`AnimatedSplash.tsx`, animación Lottie) montado en `App.tsx` con
+`zIndex: 999` sobre `StyleSheet.absoluteFill`. Al terminar la animación
+JS, `onFinish` desmontaba el overlay y el fondo `#00AEEF` (cian) del
+`GestureHandlerRootView` quedaba expuesto en el instante de la
+transición hacia `WelcomeScreen`, provocando un "flash cian". El
+`StatusBar` además dependía de `showAnimatedSplash`, forzando un cambio
+de color abrupto.
+
+**Decisión:**
+
+Eliminar `AnimatedSplash.tsx` por completo y dejar el splash nativo de
+`react-native-bootsplash` (dependencia ya presente, `^7.1.0`) como única
+capa. El splash se oculta en `onReady` del `NavigationContainer`:
+
+```typescript
+<NavigationContainer
+  onReady={() => {
+    requestAnimationFrame(() => BootSplash.hide({ fade: true }));
+  }}
+>
+```
+
+De esta forma el splash nativo cubre el arranque, la hidratación de los
+stores y el primer paint del árbol de navegación; al ocultarse con fade,
+la primera pantalla ya está lista y no hay flash. El `StatusBar` deja de
+depender del estado del splash.
+
+**Alternativas consideradas:**
+
+- Mantener el overlay JS ajustando solo los colores: descartado, no
+  elimina la doble capa ni el flash de transición.
+- Ocultar el splash con un temporizador fijo: descartado, no garantiza
+  que la navegación ya esté pintada (mismo problema de flash o splash
+  recortado).
+- Ocultar apenas completada la hidratación (`_hasHydrated`): descartado,
+  podía revelar la pantalla antes del primer paint de React Navigation.
+
+**Consecuencias:**
+
+- Una sola capa de splash, controlada por el ciclo de vida real del
+  árbol de navegación (`onReady`).
+- El arranque muestra el logo oficial, regenerado desde
+  `assets/splash_logo.png` en `drawable-*/bootsplash_logo.png` y
+  `assets/bootsplash/*`. El launcher usa `mipmap-*/ic_launcher*.png`.
+- Se eliminó `src/app/screen/AnimatedSplash.tsx`; `App.tsx` ya no usa
+  `useState` para el splash ni el overlay absoluto.
+- No se agregó ninguna dependencia nueva: `react-native-bootsplash`
+  ya estaba en `package.json` (`^7.1.0`).
+
+**Referencias:** ARCHITECTURE.md (sección 4), BUGS_RESUELTOS/userapp.md
+(CASO 018).
+
+---
+
 ### ADR-022: Desactivación de la funcionalidad "Seguir Bus" en la UserApp
 
 **Estado:** Aceptada.
@@ -968,8 +1058,9 @@ historial de Git si algún día se decide reintroducirla.
   embudo que lo use deja de recibir datos desde esta versión.
 - `mapStore` queda reducido al comando `'center'`.
 
-**Referencias:** ARCHITECTURE.md (sección 4, tabla de stores;
-apéndice de archivos UserApp), Mockups §7c, MVP.md (flujo manual User).
+**Referencias:** ARCHITECTURE.md (sección 4, tabla de stores; estructura
+de UserApp). Los identificadores «Mockups §7c», «apéndice de archivos
+UserApp» y «flujo manual User» de MVP.md ya no están vigentes.
 
 ---
 
@@ -1046,7 +1137,8 @@ S3 de ROADMAP.md.
 
 ### ADR-024: Auditoría mínima en `/asignaciones` (`createdAt` epoch + `createdBy` UID) y semántica de "desactivar"
 
-**Estado:** Aceptada e implementada (24/08/2026).
+**Estado:** Aceptada e implementada (24/08/2026); alcance de auditoría
+ampliado en AdminWeb (27/08/2026).
 
 **Contexto:**
 
@@ -1076,7 +1168,7 @@ diseño:
    que sí necesitó `/choferes_uids`).
 3. **Alcance limitado a asignaciones**: `choferes` y `buses` NO reciben
    campos de auditoría por ahora. Criterio: solo se guarda un dato si
-   cambia una decisión    operativa del MVP. La fecha de alta de un
+   cambia una decisión operativa del MVP. La fecha de alta de un
    conductor/bus no condiciona nada hoy; agregarla sería construir el
    post-MVP antes de validar el piloto.
 
@@ -1099,11 +1191,17 @@ Razones:
   existe aún; si existiera, post-MVP: botón "Forzar detención" que
   escriba `isActive: false` directo en `/ubicacion_buses/{placa}`.
 
+**Nota sobre la idea futura:** escribir `isActive:false` no garantiza
+detener al productor; la siguiente publicación del Driver puede volver a
+escribir `isActive:true`. Es una idea post-MVP no aprobada, no una
+funcionalidad implementada.
+
 **Alternativas consideradas:**
 
 - String localizado en RTDB: descartada (ver punto 1).
 - `createdBy: 'unknown'` como fallback: descartada (dato falso).
-- Auditoría también en conductores/buses: diferida al post-MVP.
+- Auditoría también en conductores/buses: diferida en la decisión
+  original; implementada después en `3590d87`.
 - Revocación GPS inmediata al desactivar: descartada para MVP (Opción B,
   ver arriba).
 
@@ -1119,11 +1217,20 @@ Razones:
   escribir un UID ajeno en ese campo si las reglas lo permitieran. La
   autorización real sigue determinada por `auth.uid` en
   `/administradores` vía Security Rules (ADR-017/023).
-- Congelamiento: tras este cambio no se agregan más funcionalidades
-  administrativas al MVP; el siguiente hito es E2E de campo.
+- **Hito histórico:** tras este cambio no se agregaron más
+  funcionalidades administrativas al MVP en esa fase; el siguiente hito
+  era el E2E de campo. La ampliación posterior de auditoría muestra que
+  la congelación no fue una prohibición permanente.
+
+**Evolución posterior (27/08/2026):** el alcance de auditoría se amplió
+en AdminWeb. `3590d87` incorporó `creadoEn`/`creadoPor` en
+`/choferes/{dni}` y `/buses/{placa}` (`admin_service.ts`). La exclusión
+del punto 3 describe la decisión original del 24/08; la implementación
+posterior la extendió.
 
 **Referencias:** FIREBASE_SCHEMA.md (§4 nodo `/asignaciones`),
-ROADMAP.md (Condiciones de pre-release y publicación, W12); MVP.md (§1, riesgo del piloto).
+ROADMAP.md (Condiciones de pre-release y publicación, W12); MVP.md (§1, riesgo del piloto);
+AdminWeb commit `3590d87`.
 
 ---
 
@@ -1205,10 +1312,12 @@ recorrido y mezclaba dos responsabilidades distintas.
 
 **Decisión:**
 
-1. **DETENER RECORRIDO** es la única acción que detiene la transmisión de
-   ubicación: cancela el `watchPosition`, detiene el heartbeat y el
-   Foreground Service, y escribe `isActive:false` en
-   `/ubicacion_buses/{busId}`.
+1. **DETENER RECORRIDO** es la única **acción explícita del usuario** que
+   detiene la transmisión de ubicación: cancela el `watchPosition`,
+   detiene el heartbeat y el Foreground Service, y escribe `isActive:false`
+   en `/ubicacion_buses/{busId}`. Watchdog, fallos del servicio y
+   terminaciones del proceso también pueden detener el motor sin esa
+   acción; esto no cambia la separación de responsabilidades.
 2. **Cerrar sesión** es una acción **independiente** (`auth().signOut()`),
    con confirmación mediante Alert. No detiene el tracking por sí misma.
 3. El término **"DETENER TODO"** y la acción compuesta quedan retirados como
@@ -1234,7 +1343,8 @@ El cierre local ya no espera confirmación Firebase. DETENER invalida la
 intención/generación compartida antes del primer await, libera los recursos
 de su ejecución y serializa el stop nativo con los inicios/recuperaciones.
 Solo tras éxito nativo solicita `isActive:false`, antes de liberar INICIAR y
-sin esperar ACK. Una respuesta anterior solo aporta diagnóstico; no altera
+sin esperar ACK. La solicitud remota es condicional y no confirma recepción.
+Una respuesta anterior solo aporta diagnóstico; no altera
 el recorrido nuevo. Un stop nativo fallido no se presenta como Detenido:
 INICIAR permanece bloqueado y DETENER permite reintento. El estado compartido
 se sincroniza al remontar mediante `PRO_TRACKING_STATE`.
@@ -1346,8 +1456,10 @@ observar. Un timeout aislado no distingue caída de red de permisos,
    respaldo previo.
 3. Si la consulta falla por red y `.info/connected` reporta desconexión,
    se puede iniciar con un **respaldo en memoria** de la asignación ya
-   validada, solo si coincide el conductor y la fecha. El respaldo no se
-   persiste en disco y no sobrevive al proceso.
+   validada, solo si coincide el conductor y la fecha. El respaldo vive en
+   un `useRef` de la pantalla de tracking; no se persiste en disco, no
+   sobrevive al proceso y no sustituye la identidad de
+   `trackingIntent.run`.
 4. Un timeout o un error sin desconexión confirmada no habilita el respaldo.
 5. La identidad del recorrido se fija en `trackingIntent.run =
    { driverDni, busId }`; GPS, heartbeat y parada la conservan aunque la
@@ -1376,6 +1488,8 @@ observar. Un timeout aislado no distingue caída de red de permisos,
   validada; si el administrador la canceló durante la desconexión, la app
   no puede saberlo hasta reconectar y la operación puede continuar.
 - El respaldo en memoria no cubre reinicio del proceso ni cambio de día.
+- La consulta usa los datos disponibles del SDK; una respuesta del SDK no
+  certifica que el servidor haya confirmado la asignación más reciente.
 - `.info/connected` debe referenciarse sin barra inicial; la variante
   `/…` lanza excepción en el SDK instalado (ver
   `BUGS_RESUELTOS/driverapp.md`, CASO 021).
@@ -1450,8 +1564,13 @@ ADR-026, Driver commit `4a05e41`.
 
 ### ADR-030: Tolerancia de cinco minutos para timestamps futuros de recepción (I06-B)
 
-**Estado:** Aceptada por el usuario el 03/11/2026; implementada y probada
-localmente, pendiente de integración/publicación al corte de esta fase.
+**Estado original (03/11/2026):** aceptada por el usuario; implementada y
+probada localmente, pendiente de integración/publicación al corte de esa
+fase.
+
+**Estado actual:** integrada en `main` (`011a4b6`) y en la referencia
+disponible de `origin/main`. La validación física prolongada y la
+publicación APK no se acreditan aquí.
 
 **Contexto:** el 30/10 se decidió conservar los respaldos para campos ausentes
 (I06-A), validar valores explícitamente incorrectos y diferir timestamps
@@ -1491,7 +1610,8 @@ pipeline real servicio → store). User 124/124 en diez suites; TypeScript
 aprobado y lint sin deuda nueva (21 errores/50 warnings globales previos).
 
 **Referencias:** ARCHITECTURE.md §5; FIREBASE_SCHEMA.md §3;
-PROJECT_CONTEXT.md §5; BUGS_RESUELTOS/userapp.md (CASO 019).
+PROJECT_CONTEXT.md §5; BUGS_RESUELTOS/userapp.md (CASO 019); MVP.md §1;
+User commit `011a4b6`.
 
 ---
 
