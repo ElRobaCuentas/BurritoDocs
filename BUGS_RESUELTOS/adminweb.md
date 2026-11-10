@@ -30,10 +30,11 @@ No existe suite automatizada propia de AdminWeb; no se agregó framework.
 administradores y turnos, Escape, overlay, reapertura y scroll. No se afirma
 que esta prueba de navegador haya ocurrido ni que el bundle valide Firebase.
 
-**Estado:** corregido/verificado localmente en `fix/modal-focus` (`5e66d46`), pendiente
-de revisión e integración/push; sin deploy. B2 preservado exclusivamente
-en `test/b2-adminweb-emulator`, commit `dc58daf`. Sus tres archivos conservan
-los hashes Git previos y no forman parte de esta corrección:
+**Estado:** corregido y verificado localmente en `5e66d46` (`fix/modal-focus`),
+integrado y publicado en `main`/`origin/main`; deploy no acreditado. B2
+preservado exclusivamente en la rama local `test/b2-adminweb-emulator`,
+commit `dc58daf`. En esa rama, sus tres archivos conservan los hashes Git
+previos y no forman parte de esta corrección:
 
 | Archivo B2 | Hash Git |
 |---|---|
