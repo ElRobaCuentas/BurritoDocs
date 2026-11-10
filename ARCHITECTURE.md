@@ -1,66 +1,105 @@
 # Architecture — El Burrito
 
+Documento de la arquitectura implementada del Ecosistema El Burrito. Describe
+componentes, responsabilidades, comunicación, estado local, ciclo de vida del
+tracking y límites observables. Los contratos completos de datos viven en
+`FIREBASE_SCHEMA.md`; las decisiones y su razonamiento, en `DECISIONS.md`; la
+evidencia histórica, en `BUGS_RESUELTOS/`.
+
+## Índice
+
+- [§1. Visión General](#1-visión-general)
+- [§2. Arquitectura del Ecosistema](#2-arquitectura-del-ecosistema)
+- [§3. Arquitectura de BurritoDriverApp](#3-arquitectura-de-burritodriverapp-conductor)
+- [§3.1. Arquitectura de AdminWeb](#31-arquitectura-de-adminweb-administrador)
+- [§4. Arquitectura de BurritoUserApp](#4-arquitectura-de-burritouserapp)
+- [§5. Comunicación y Flujo de Datos](#5-comunicación-y-flujo-de-datos)
+- [§6. Componentes Principales](#6-componentes-principales)
+- [§7. Servicios Externos](#7-servicios-externos)
+- [§8. Ciclo de Vida del Tracking](#8-ciclo-de-vida-del-tracking)
+- [§9. Consideraciones de Implementación y Límites](#9-consideraciones-de-implementación-y-límites)
+- [§10. Referencias](#10-referencias)
+
 ## 1. Visión General
 
-El sistema sigue el patrón **productor-consumidor** sobre una arquitectura
-**serverless** y **unidireccional**:
+El ecosistema usa un patrón **productor-consumidor para el tracking**: la
+BurritoDriverApp produce posiciones GPS y El Burrito las consume. Esa parte del
+sistema es **unidireccional** y no tiene una API propia ni un backend intermedio
+mantenido por el proyecto. Firebase proporciona servicios backend administrados
+(Auth, Realtime Database, Hosting, Analytics y Crashlytics), que se consumen
+directamente desde las aplicaciones.
+
+El resto del ecosistema no es estrictamente unidireccional: AdminWeb administra
+configuración y BurritoDriverApp lee datos necesarios para operar.
 
 ```
-DriverApp (productor GPS) ──escribe──→ Firebase RTDB (bus) ──escucha──→ UserApp (consumidor)
-AdminWeb (gestión admin) ──escribe──→ Firebase RTDB (config)
+BurritoDriverApp ── escribe tracking ──▶ RTDB /ubicacion_buses/{busId}
+        │                                        │
+        └── lee perfil y asignaciones ◀──────────┘
+
+AdminWeb ── escribe/lee configuración ──▶ RTDB /choferes, /buses,
+        │                                   /asignaciones, /administradores
+        └── inicializa/elimina /ubicacion_buses/{placa} al crear/eliminar bus
+
+El Burrito ── escucha /ubicacion_buses ──▶ mapa
+        ├── lee /usuarios/{uid}
+        └── escribe /usuarios/{uid} y /comentarios
 ```
 
-No hay backend intermedio. Firebase Realtime Database actúa como único bus
-de mensajes, sincronizando los datos entre ambas aplicaciones mediante
-websockets nativos del SDK.
+Firebase RTDB es el bus de sincronización del tracking y también el almacén de
+configuración administrativa. Firebase Auth es la fuente de identidad. No hay
+un servidor de aplicación propio que opaque estas operaciones.
 
 ## 2. Arquitectura del Ecosistema
 
-### Separación de responsabilidades (post-migración)
+### Separación de responsabilidades
 
-| Aplicación | Rol | Función principal | Autenticación |
-|-----------|-----|-------------------|---------------|
-| BurritoDriverApp | **Conductor** | Capturar GPS y escribir en RTDB (conductor-only) | DNI + contraseña |
-| BurritoUserApp | **Consumidor** (estudiante) | Leer desde RTDB y renderizar mapa | Email/contraseña o Google Sign-In |
-| AdminWeb | **Administración** | Gestionar conductores, buses y asignaciones | Auth UID (admin) |
-| Firebase RTDB | **Bus de datos** | Almacenar y sincronizar estado en vivo | — |
-| Firebase Auth | **Identidad** | Autenticar conductores, estudiantes y administradores | — |
+| Aplicación | Rol | Función principal | Identidad | Autorización |
+|-----------|-----|-------------------|-----------|--------------|
+| BurritoDriverApp | **Conductor** | Capturar GPS, mantener presencia y escribir tracking en RTDB | DNI + contraseña | Sesión de conductor y reglas RTDB |
+| El Burrito | **Consumidor** (estudiante) | Leer tracking y renderizar el mapa; gestionar perfil y feedback | Email/contraseña o Google Sign-In | Sesión de estudiante y reglas por UID |
+| AdminWeb | **Administración** | Gestionar conductores, buses, asignaciones y administradores | DNI + contraseña | Nodo `/administradores/{uid}` |
+| Firebase RTDB | **Bus y almacén** | Sincronizar tracking y configuración | — | Reglas de seguridad |
+| Firebase Auth | **Identidad** | Autenticar las tres aplicaciones | — | — |
 
-### Flujo de datos
+La autenticación demuestra una identidad; la autorización decide qué puede
+hacer esa identidad. El rol no se deduce del email ni del UID: se deriva del
+nodo administrativo, del índice de conductores o de las reglas de cada path.
 
-```
-┌────────────────────┐  write   ┌────────────────────┐
-│ BurritoDriverApp    │ ───────→ │  Firebase RTDB     │
-│ (Conductor)         │ubicación │  /ubicacion_buses  │
-└────────────────────┘          │  /asignaciones     │
-┌────────────────────┐  write   │  /choferes         │
-│ AdminWeb            │ ───────→ │  /buses            │
-│ (Administrador)     │ gestión  │                    │
-└────────────────────┘          │  /choferes_uids    │
-┌────────────────────┐  listen  │  /administradores  │
-│ BurritoUserApp      │ ←─────── │  /usuarios         │
-│ (Estudiante)        │          │  /comentarios      │
-└────────────────────┘          └────────────────────┘
-```
+### Operaciones entre componentes
 
-### Autenticación
+| Origen | Operación | Destino |
+|--------|-----------|---------|
+| BurritoDriverApp | Escribe posición y `isActive` del recorrido | `/ubicacion_buses/{busId}` |
+| BurritoDriverApp | Lee perfil y asignación diaria | `/choferes/{dni}`, `/asignaciones` |
+| BurritoDriverApp | Consulta estado de conexión para el respaldo I08 | `.info/connected` |
+| El Burrito | Escucha la colección completa | `/ubicacion_buses` |
+| El Burrito | Lee y actualiza perfil | `/usuarios/{uid}` |
+| El Burrito | Crea feedback | `/comentarios` |
+| AdminWeb | CRUD de configuración y lectura de listas | `/choferes`, `/buses`, `/asignaciones`, `/administradores` |
+| AdminWeb | Inicializa o elimina el nodo de un bus | `/ubicacion_buses/{placa}` |
 
-- **DriverApp (conductores)**: Firebase Auth con email compuesto como
-  `${dni}@conductor.com`. Contraseña = DNI del conductor, establecida al
-  crear el conductor desde AdminWeb.
-- **AdminWeb (administradores)**: Firebase Auth con email
-  `${dni}@admin.com`. Tras el login, el auth gate consulta
-  `/administradores/{auth.uid}` para autorizar el acceso al panel.
-- **UserApp (estudiantes)**: Firebase Auth con email/contraseña (registro
-  estándar) o Google Sign-In.
+### Autenticación y autorización
 
-### Separación de proyectos
+- **BurritoDriverApp (conductores)**: Firebase Auth con email compuesto
+  `${dni}@conductor.com`. La contraseña inicial es el DNI, establecida al crear
+  el conductor desde AdminWeb. El gate de la app comprueba sesión, no rol.
+- **AdminWeb (administradores)**: Firebase Auth con email `${dni}@admin.com`.
+  Tras el login, el auth gate consulta `/administradores/{uid}` para autorizar
+  el acceso al panel.
+- **El Burrito (estudiantes)**: Firebase Auth con email/contraseña o Google
+  Sign-In. El perfil y el feedback se vinculan al UID autenticado.
+- **Autorización RTDB**: las reglas limitan la escritura de tracking a
+  conductores indexados en `/choferes_uids` o administradores, y las escrituras
+  de perfil/feedback al UID propio. La UI no sustituye esas reglas.
 
-El ecosistema tiene tres aplicaciones independientes dentro del mismo
-repositorio: dos proyectos React Native (**BurritoDriverApp** y
-**BurritoUserApp**) y una SPA web (**AdminWeb**). Comparten la misma base
-de datos Firebase y el mismo proyecto `burritounmsm`, pero tienen su
-propio `package.json`, entry point y configuración.
+### Proyectos y repositorios
+
+Las tres aplicaciones comparten el proyecto Firebase `burritounmsm`, pero son
+proyectos independientes con su propio `package.json`, entry point y
+configuración. El workspace `C:\Movil` contiene repositorios Git separados para
+`User/`, `Driver/`, `AdminWeb/` y `docs/`; no es un único repositorio con un
+solo historial.
 
 ## 3. Arquitectura de BurritoDriverApp (conductor)
 
@@ -68,462 +107,351 @@ propio `package.json`, entry point y configuración.
 
 ```
 index.js → src/DriverApp.tsx
+              ├── sin sesión → LoginDriverScreen
+              └── con sesión → SendCoordinates
 ```
 
-`DriverApp.tsx` monta `onAuthStateChanged` y decide entre login y tracking.
-La DriverApp es **exclusiva de conductores**: no incluye panel de
-administración ni consulta `/administradores` (el panel vive en AdminWeb,
-ADR-025).
+`DriverApp.tsx` monta `onAuthStateChanged` y decide entre login y tracking. La
+app está destinada exclusivamente a conductores y no incluye panel de
+administración ni consulta `/administradores`. El gate solo comprueba que
+exista una sesión; no verifica por sí mismo el rol ni el flag `activo` del
+conductor. La separación operativa se apoya en la cuenta convencional de
+conductor y en las reglas de RTDB (ADR-023, ADR-025).
 
-```
-Login exitoso
-    ↓
-onAuthStateChanged → user detectado
-    ├── user → SendCoordinates(driverDni = email.split('@')[0])
-    └── null → LoginDriverScreen
-```
+### Login y sesión
 
-### Estructura de archivos
+`LoginDriverScreen` construye `${dni}@conductor.com` y llama a
+`auth().signInWithEmailAndPassword`. Maneja errores de red, credenciales
+inválidas y cuentas deshabilitadas.
 
-```
-src/
-├── DriverApp.tsx                    # Auth gate (login ↔ tracking)
-├── screen/
-│   ├── LoginDriverScreen.tsx        # Login con DNI + contraseña
-│   └── SendCoordinates.tsx          # Tracking, permisos, GPS
-├── services/
-│   └── firebase_service.ts          # Escritura a RTDB (updateBusLocation)
-└── shared/
-    ├── theme/
-    │   ├── colors.ts
-    │   └── typography.ts
-    └── utils/timeout.ts             # Helper con timeout para lecturas RTDB
-```
+`DriverApp.tsx` escucha la sesión y deriva `driverDni` de la parte local del
+email. En cada cambio de usuario sincroniza Crashlytics con `setUserId(uid)` o
+`setUserId('')`. `SendCoordinates` contiene el resto de la lógica de tracking;
+el ciclo detallado está en §8.
 
-### LoginDriverScreen
+CERRAR SESIÓN es una acción separada de DETENER RECORRIDO: no escribe
+`isActive:false` ni detiene el servicio. La pantalla la ofrece en estado
+detenido o en la tarjeta de error de asignación; durante un recorrido activo se
+muestra DETENER, no CERRAR SESIÓN. La separación de responsabilidades está en
+ADR-026.
 
-- Input de DNI y contraseña.
-- Construye email como `${dni}@conductor.com` y llama a
-  `auth().signInWithEmailAndPassword`.
-- Manejo de errores: red, credenciales inválidas, cuenta deshabilitada.
-
-### SendCoordinates (pantalla principal del conductor)
-
-Contiene la lógica completa de tracking. Ver sección 8 para el ciclo
-detallado.
-
-### Firebase Auth (DriverApp)
-
-- `auth().onAuthStateChanged()` en `DriverApp.tsx` maneja la sesión.
-- `auth().signOut()` disponible desde SendCoordinates (acción "Cerrar
-  sesión", **independiente** de detener el recorrido — ADR-026).
-- La escritura de ubicación está restringida por reglas a conductores
-  indexados en `/choferes_uids` o a administradores (ADR-023).
-
----
+La estructura de archivos relevante está centralizada en §6.
 
 ## 3.1 Arquitectura de AdminWeb (administrador)
 
-### Entry point y enrutador
+### Entry point y auth gate
 
 ```
 src/main.tsx → src/App.tsx
+                   ├── sin sesión → LoginScreen
+                   ├── checking → verificación de rol
+                   ├── admin → AdminNavigator
+                   ├── denied → "No autorizado"
+                   └── error → "No se pudo verificar" (Reintentar / Cerrar Sesión)
 ```
 
-`App.tsx` es el auth gate: escucha `onAuthStateChanged` y mantiene un estado
-explícito de rol (`checking` → `admin` / `denied` / `error`). Con sesión,
-consulta `existeAdministrador(uid)` sobre `/administradores/{uid}` (con
-timeout de 10 s); mientras está en `checking` no muestra "No autorizado".
-Un `PERMISSION_DENIED` (la regla exige ser admin) equivale a `denied`; un
-timeout o fallo de red va a `error` con reintento / cierre de sesión.
+`App.tsx` escucha `onAuthStateChanged` y mantiene un estado explícito de rol
+(`checking` → `admin` / `denied` / `error`). Con sesión, consulta
+`existeAdministrador(uid)` sobre `/administradores/{uid}` con timeout de 10 s.
+Mientras está en `checking` no muestra "No autorizado". Un `PERMISSION_DENIED`
+equivale a `denied`; un timeout o fallo de red va a `error` con reintento o
+cierre de sesión.
 
-### Estructura de archivos
+`existeAdministrador` usa `get()` y retorna `snapshot.exists()`. Es la fuente
+de verdad del auth gate y no se reemplaza por un claim local ni por la UI.
 
-```
-src/
-├── main.tsx                         # Entry point (BrowserRouter + ToastProvider)
-├── App.tsx                          # Auth gate: sesión → rol (checking/admin/denied/error)
-├── index.css                        # Importa src/styles/* (sistema de diseño por tokens)
-├── styles/                          # tokens.css · base.css · layout.css · components.css · overlays.css · screens.css
-├── screen/
-│   └── LoginScreen.tsx              # Login admin (DNI + contraseña → {dni}@admin.com)
-├── navigation/
-│   └── AdminNavigator.tsx           # Rutas del panel (renderizadas dentro del AppShell)
-├── features/admin/
-│   ├── screen/
-│   │   ├── ChoferesScreen.tsx       # Gestión de conductores (crear, editar, activar/desactivar)
-│   │   ├── BusesScreen.tsx          # CRUD de buses
-│   │   ├── AsignacionesScreen.tsx   # Formulario y listado por fecha, editar horarios
-│   │   └── AdminsScreen.tsx         # Gestión de administradores
-│   ├── components/
-│   │   └── TurnosEditor.tsx         # Editor reutilizable de turnos
-│   ├── services/
-│   │   ├── admin_service.ts         # CRUD (Firebase Auth + RTDB)
-│   │   └── admin_check.ts           # existeAdministrador(uid): Promise<boolean>
-│   └── utils/
-│       ├── turno.ts                 # Modelo, validación y formato de turnos
-│       └── turnoDraft.ts            # Estado de edición de turnos
-└── shared/
-    ├── config/
-    │   ├── env.ts                   # Validación de variables VITE_FIREBASE_*
-    │   └── firebase.ts              # Firebase Auth + RTDB (Firebase JS SDK)
-    ├── layout/
-    │   ├── AppShell.tsx             # Sidebar + topbar + drawer móvil; provee la sesión
-    │   └── SessionContext.tsx       # Datos del admin en sesión (useSession)
-    ├── ui/                          # Primitivas (Button, Field, Card, StatCard, Modal/ConfirmDialog, Toast, Icon…)
-    └── utils/
-        ├── dni.ts                   # Normalización y validación de DNI (8 dígitos)
-        ├── format.ts                # Formateo de fechas y nombres de admin
-        ├── date.ts                  # Fechas de calendario America/Lima
-        └── timeout.ts               # Helper con timeout para reads de RTDB
-```
-
-### Interfaz (sistema de diseño)
+### Interfaz
 
 La interfaz usa CSS propio con **tokens** (sin dependencias de UI). `index.css`
-importa las hojas de `src/styles/`; usa cian `#00AEEF`, gris `#F5F5F5`,
-fondo blanco y texto `#222222` en tema claro.
-El **AppShell** (`shared/layout/AppShell.tsx`) aporta sidebar +
-topbar en escritorio y drawer en móvil, muestra la identidad del admin en
-sesión y la expone vía `SessionContext`/`useSession`. Las pantallas se
-componen con las primitivas de `shared/ui/`; las confirmaciones usan
-`ConfirmDialog` (no `window.confirm`) y los avisos, toasts.
+importa las hojas de `src/styles/`; usa cian `#00AEEF`, gris `#F5F5F5`, fondo
+blanco y texto `#222222` en tema claro. `AppShell` aporta sidebar, topbar y
+drawer móvil, muestra la identidad del admin y la expone vía
+`SessionContext`/`useSession`. Las pantallas usan las primitivas de
+`shared/ui/`; las confirmaciones usan `ConfirmDialog` y los avisos, toasts.
 
-El efecto de apertura de `Modal.tsx` depende solo de `open`: enfoca el
-diálogo y bloquea el scroll hasta cerrar/desmontar. Escape se registra en
-otro efecto con `[open, onClose]`, para utilizar el callback vigente sin
-robar el foco al editar inputs (corrección 03/11/2026; ver
-`BUGS_RESUELTOS/adminweb.md`). Los cambios B2 de emuladores se preservan
-exclusivamente en `test/b2-adminweb-emulator` (`dc58daf`), fuera de `main`.
+El efecto de apertura de `Modal.tsx` depende solo de `open`: enfoca el diálogo
+y bloquea el scroll hasta cerrar o desmontar. Escape se registra en otro efecto
+con `[open, onClose]` para usar el callback vigente sin robar el foco al editar
+inputs (corrección 03/11/2026; ver `BUGS_RESUELTOS/adminweb.md`). Los cambios B2
+de emuladores se preservan en `test/b2-adminweb-emulator` (`dc58daf`), fuera de
+`main`.
 
 ### Módulo Admin
 
-Accesible solo para usuarios cuyo `auth.uid` existe en
-`/administradores/`. Gestión contra RTDB:
+Accesible solo para usuarios cuyo `auth.uid` existe en `/administradores/`.
+Gestión contra RTDB:
 
 | Entidad | Path | Operaciones |
 |---------|------|-------------|
 | Choferes | `/choferes/{dni}` | Crear (Auth + RTDB + índice `/choferes_uids`), listar, editar, activar/desactivar (no se eliminan) |
-| Buses | `/buses/{placa}` | Crear + init `/ubicacion_buses/{placa}`, listar, toggle, eliminar |
-| Asignaciones | `/asignaciones/{pushId}` | Crear para hoy/futuro con uno o varios turnos, validar exclusividad conductor/fecha, listar, editar turnos, cancelar |
+| Buses | `/buses/{placa}` | Crear e inicializar `/ubicacion_buses/{placa}`, listar, toggle, eliminar |
+| Asignaciones | `/asignaciones/{pushId}` | Crear para hoy/futuro con uno o varios turnos (valida mínimo 1, inicio < fin, mismo día, sin solape y los ordena), validar exclusividad conductor/fecha, listar, editar turnos (con la misma validación/orden) y cancelar |
 | Administradores | `/administradores/{uid}` | Crear (Auth + RTDB), listar, editar, eliminar (nodo) |
 
 Al crear cuentas de Auth, `admin_service.ts` usa una **app temporal por
 operación** con `inMemoryPersistence` (`initializeApp(config, 'reg_...' /
-'admin_...')`) para no sobrescribir la sesión del admin actual (ver ADR-011 y
+'admin_...')`) para no sobrescribir la sesión del admin actual (ADR-011,
 ADR-025).
 
-### admin_check.ts
+Límites de la operación administrativa:
 
-`existeAdministrador(uid: string): Promise<boolean>` consulta
-`/administradores/{uid}` con `get()` y retorna `snapshot.exists()`, acotado
-por un timeout de 10 s (C4.AUTH). Un `PERMISSION_DENIED` se interpreta como
-`false` (no es admin); los fallos de red se propagan como error. Es la fuente
-de verdad del auth gate de AdminWeb.
+- `createAsignacion` valida la exclusividad conductor/fecha en el cliente con
+  una lectura seguida de una escritura; no es una transacción atómica y dos
+  administradores podrían competir. No valida exclusividad del bus: varios
+  conductores pueden usar la misma placa.
+- `hasActiveOrFutureBusAssignment` se usa para bloquear la eliminación de un bus
+  con asignación activa o futura; no participa del alta de asignaciones.
+- Desactivar un conductor no cancela sus asignaciones ni detiene su tracking.
+  No existe eliminación física habitual de conductores.
+- Eliminar un administrador borra su nodo, no su cuenta de Authentication.
+- Crear un bus normaliza la placa y crea `/ubicacion_buses/{placa}` con
+  `isActive:false`. Eliminarlo también elimina ese nodo.
+- Los turnos son datos administrativos dentro de una asignación; no habilitan
+  ni bloquean el tracking.
 
-### Navegación
-
-```
-Login → (sesión) → estado "checking" mientras existeAdministrador(uid)?
-    ├── nodo existe      → AdminNavigator (Asignaciones / Choferes / Buses / Admins)
-    ├── PERMISSION_DENIED → "No autorizado" (Cerrar Sesión)
-    └── timeout / red     → "No se pudo verificar tu cuenta" (Reintentar / Cerrar Sesión)
-```
-
----
+La estructura de archivos relevante está centralizada en §6.
 
 ## 4. Arquitectura de BurritoUserApp
 
-### Entry point
+### Entry point, hidratación y splash
 
 ```
-index.js → src/app/App.tsx
+index.js → src/app/App.tsx → StackNavigator → DrawerNavigator → MapScreen
 ```
 
-`App.tsx` orquesta: gestor de navegación, stores de Zustand, Firebase
-offline/online según estado de la app, Google Sign-In config, splash
-nativo (react-native-bootsplash) y gating de hidratación. El splash se
-oculta en `onReady` del `NavigationContainer`, garantizando que la
-primera pantalla ya está pintada e hidratada (ADR-021).
+`App.tsx` configura Google Sign-In, cambia Firebase RTDB entre offline/online
+según `AppState`, espera la hidratación de `userStore` y `themeStore`, y monta
+`NavigationContainer`. El splash nativo de `react-native-bootsplash` se oculta
+en `onReady` mediante `requestAnimationFrame`. Esa secuencia reduce la ventana
+de splash sobre una UI vacía, pero no demuestra que todo trabajo asíncrono
+posterior haya terminado ni que la primera pantalla esté completamente
+pintada. Un watchdog de sesión limpia el estado local si el store indica sesión
+pero Firebase Auth ya no entrega usuario.
 
-### Navegación (post-poda)
+### Navegación
 
 ```
 StackNavigator (root)
 ├── logged-out: Welcome → SignIn/SignUp → ForgotPassword → AvatarPicker
 └── logged-in:
     └── DrawerNavigator
-        └── MapScreen (única pantalla en el drawer — sin rutas admin)
+        └── MapScreen (única pantalla del drawer; sin rutas admin)
 ```
 
-El gating de autenticación es declarativo. Ya no existen rutas
-administrativas ni gating por `rol === 'admin'`. El módulo admin fue
-eliminado completamente (ver FASE 4 de la migración).
-
-### Estructura de archivos (post-poda)
-
-```
-src/
-├── app/
-│   ├── App.tsx                        # Entry point, Firebase offline/online
-│   └── navigations/
-│       ├── StackNavigator.tsx         # Root navigator con auth gate (sin admin)
-│       └── DrawerNavigator.tsx        # Menú lateral con MapScreen
-├── features/
-│   ├── auth/screen/                   # Welcome, SignIn, SignUp, ForgotPassword, AvatarPicker
-│   └── map/
-│       ├── screen/MapScreen.tsx       # Contenedor del mapa + overlay UI
-│       ├── components/
-│       │   ├── Map.tsx                # Mapbox canvas con marcadores, ruta y paraderos
-│       │   ├── CustomDrawer.tsx       # Menú lateral animado (sin botón admin)
-│       │   ├── FAB.tsx                # Botón flotante
-│       │   ├── StopCard.tsx           # Modal de información de paradero
-│       │   └── MapBranding.tsx        # Marca de agua del mapa
-│       ├── constants/
-│       │   └── map_route.ts           # GeoJSON de ruta y paraderos
-│       ├── utils/
-│       │   ├── movement.ts            # C4.6 estrategia C (MOVIMIENTO/PARADERO)
-│       │   └── geo.ts                 # Utilidades geográficas (Haversine)
-│       ├── services/map_service.ts    # Suscripción RTDB + feedback
-│       └── types.ts
-├── shared/
-│   ├── config/firebase.ts             # Instancia compartida de RTDB y Auth
-│   └── theme/
-│       ├── colors.ts
-│       └── typography.ts
-└── store/
-    ├── userStore.ts                   # Persistida, solo rol 'estudiante' | null
-    ├── themeStore.ts                  # Persistencia manual (AsyncStorage)
-    ├── mapStore.ts                    # Estado efímero del mapa
-    ├── burritoLocationStore.ts        # Estado efímero de ubicación del bus
-    └── drawerStore.ts                 # Estado efímero del menú lateral
-```
+El gating de autenticación es declarativo según `isLoggedIn`. No existen rutas
+administrativas ni gating por `rol === 'admin'`. El módulo admin fue eliminado
+de la app; la evolución está documentada en ADR-025 y en el historial de
+`BUGS_RESUELTOS/adminweb.md`.
 
 ### Stores de Zustand
 
 | Store | Persistencia | Propósito |
 |-------|-------------|-----------|
-| `userStore` | Zustand persist + AsyncStorage | uuid, username, avatar, rol (solo 'estudiante'), isLoggedIn |
+| `userStore` | Zustand persist + AsyncStorage | uuid, username, avatar, nickname, email, rol (`'estudiante' \| null`), isLoggedIn |
 | `themeStore` | AsyncStorage manual | isDarkMode |
 | `mapStore` | Efímera | command (center) |
-| `burritoLocationStore` | Efímera | locations (Record<string,BurritoLocation>), busMovementStates, movementDisplacements, movementMemory, isConnecting, connectionError, startTracking/stopTracking |
+| `burritoLocationStore` | Efímera | locations, busMovementStates, movementDisplacements, movementMemory, isConnecting, connectionError, startTracking/stopTracking |
 | `drawerStore` | Efímera | isOpen, open/close |
 
-### Módulo Admin (eliminado)
+El listener RTDB vive en `burritoLocationStore`, no en componentes React. Esto
+evita re-renders masivos del canvas y mantiene una única fuente de estado para
+`Map.tsx` y `MapBranding.tsx`.
 
-El módulo `features/admin/` fue eliminado de la UserApp. El panel de
-gestión reside exclusivamente en **AdminWeb** (ADR-025). El botón "Panel
-de Gestión" ya no existe en el CustomDrawer. El campo `rol` en `userStore`
-se redujo a `'estudiante' | null`.
-
-## 5. Flujo de Datos
-
-### Flujo de tracking (inicio a fin)
+### Logout estudiantil
 
 ```
-Conductor presiona INICIAR
+CustomDrawer → logoutStudent()
     ↓
-requestAllPermissions()
-    ↓ (permisos OK)
-BackgroundJob.start(locationTask, options)
-    ↓
-locationTask:
-
-  GPS callback (watchPosition)
-      │
-      ├──────────────► writeLocation()          ← única ruta de escritura
-      │
-  Heartbeat (8 s, T4.1)
-      │
-      └──────────────► writeLocation()
-
-                    │
-                    ▼
-        updateBusLocation(busId, { latitude, longitude,
-                                   heading, speed,
-                                   timestamp, isActive: true })
-                    │
-                    ▼
-                Firebase RTDB         ← /ubicacion_buses/{busId}
-                    │
-                    ▼
-     UserApp recibe el delta vía subscribeToBusLocations()
+firebaseAuth.signOut()
+    ├── falla → no se confirma el cierre local
+    └── confirma → onConfirmed() limpia la sesión local
+                    ↓
+          Google Sign-Out y Analytics se intentan sin bloquear el resultado
 ```
 
-Notas sobre el ciclo de tracking:
+El cierre local solo se confirma después de que Firebase acepta `signOut`. La
+limpieza de Google y el evento `sesion_cerrada` son best-effort: un fallo en
+esos pasos no revierte el logout ya confirmado.
 
-- `writeLocation()` es la **única** función que escribe en RTDB. Tanto el
-  callback del GPS como el heartbeat pasan por ella para no divergir
-  (T4.1).
-- El heartbeat (cada 8 s) solo escribe si no hubo otra escritura reciente
-  (no duplica el trabajo del GPS) y si ya existe una `lastLocation` de la
-  primera lectura GPS.
-- `timestamp` es la última actualización publicada, no el instante del fix
-  GPS. Con bus quieto lo refresca el heartbeat.
+### Limpieza de recursos
 
-### Flujo de visualización (UserApp — multi-bus)
+`MapScreen` inicia `startTracking()` al montar y llama `stopTracking()` al
+desmontar. `stopTracking()` libera el listener RTDB y los intervalos/timeout
+del store. Esto acredita la limpieza de esos recursos, no la ausencia global de
+cualquier listener o consumo en toda la aplicación.
+
+La estructura de archivos relevante está centralizada en §6.
+
+## 5. Comunicación y Flujo de Datos
+
+Esta sección describe **qué componentes se comunican y con qué contrato**. El
+ciclo de vida, las guardas y la recuperación del tracking se detallan en §8.
+
+### 5.1 Pipeline de tracking
 
 ```
-UserApp inicia
-    ↓
 MapScreen.mount()
     ↓
 burritoLocationStore.startTracking()
     ↓
-MapService.subscribeToBusLocations()  ← se suscribe a /ubicacion_buses
+MapService.subscribeToBusLocations() → ref.on('value')
     ↓
-ref.on('value', callback)            ← Firebase empuja deltas
+Recepción de Record<string, BurritoLocation>
     ↓
-I06: validación por entrada; I06-B descarta timestamp > recepción + 300 000 ms
+Validación I06 + deduplicación I05 + estrategia C experimental
     ↓
-Callback recibe Record<string, BurritoLocation> { placa1: {lat, lng, speed, ...}, placa2: {...}, ... }
+store.locations / busMovementStates
     ↓
-Filtro dedup por placa (timestamp > actual; también activo → inactivo con timestamp igual, I05)
-    ↓
-C4.6 EXPERIMENTAL — estrategia C (decide EN MOVIMIENTO/EN PARADERO):
-    dist = Haversine(pos previa, pos nueva)
-    dtMs = timestamp nuevo − timestamp previo
-    evidence = vCalc > 1 m/s  OR  (speed > 2 m/s AND dist > 2 m)
-    vCalc = dist / (dtMs/1000)
-    Memoria por placa: evidencia → moving; 2 parejas consecutivas sin
-    evidencia → stopped (STOP_CONFIRM_PAIRS=2). El desplazamiento de 8 m
-    (estrategia A) NO participa en esta decisión.
-    Diagnóstico temporal: CALIB_LOG_ENABLED → console.log [C4.6] por
-    actualización (placa, dist, dtMs, vCalc, speed, evidence, transición,
-    weakCount). Se elimina tras la validación en campo.
-    ↓
-Set en burritoLocationStore.locations + busMovementStates + movementMemory
-    ↓
-Map.tsx deriva burritoLocation del primer bus activo (fallback)
-    ↓
-RNAnimated interpola posición del marcador (~2s)
-    ↓
-Mapbox actualiza canvas
-
-Desmontaje (C4.4):
-MapScreen.unmount() → cleanup → burritoLocationStore.stopTracking()
-    ↓
-unsubscribe() (ref.off('value', callback))  ← se libera el listener RTDB
-    ↓
-clearInterval(onlineInterval de 2s)          ← se libera el ciclo de vida
-    ↓
-0 listeners / 0 intervalos activos (sin consumo residual)
+Map.tsx / MapBranding.tsx → interpolación RNAnimated (~2 s) → render del marcador y estado
 ```
 
-**Alcance I06 (03/11/2026):** el receptor rechaza valores explícitamente
-incorrectos de coordenadas, timestamp e `isActive`. **I06-A es una limitación
-aceptada**, según la decisión del 30/10: campos ausentes/null conservan los
-respaldos de coordenadas `0` y timestamp `Date.now()`. No se rechazan todos
-los registros incompletos. Las detenciones sin coordenadas válidas conservan
-la posición previa y pasan a offline; se mantiene I05.
-
-**I06-B:** `MapService` toma una hora de recepción por snapshot y rechaza
-timestamps explícitos mayores que esa hora + **300 000 ms** (límite inclusivo
-aceptado). No los recorta ni los entrega al store; la última ubicación válida
-y su caducidad se conservan. Así una fecha de mañana no contamina el filtro
-de orden temporal ni bloquea la siguiente ubicación correcta. El margen de
-cinco minutos fue autorizado para tolerar diferencias de reloj; no deriva
-del heartbeat. La latencia de red envejece una publicación, no la adelanta.
-No sincroniza relojes: un receptor atrasado puede rechazar datos legítimos,
-y un adelanto dentro del margen todavía puede retrasar actualizaciones o la
-caducidad. GPS, heartbeat, watchdog, movimiento y deduplicación no cambian.
-Ver ADR-030 y `BUGS_RESUELTOS/userapp.md` (CASO 019).
-
-**Feedback I04:** `CustomDrawer` obtiene el UID de Firebase Auth y
-`MapService.sendFeedback()` lo contrasta con la sesión vigente antes de
-crear un hijo mediante `push().set()`, con timestamp del servidor. Las
-reglas publicadas exigen creación con UID propio y rating entero 1–5;
-deniegan editar/borrar comentarios. Los permisos I03 de conductores y
-asignaciones, compatibles con la consulta I08 por `choferId`, se detallan
-en `FIREBASE_SCHEMA.md` §9. Publicación y validación real informadas por el
-usuario el 03/11/2026; no repetidas durante esta corrección.
-
-### Flujo de autenticación (DriverApp — conductor)
+En el productor, `locationTask` recibe los fixes y los publica:
 
 ```
-LoginDriverScreen.handleLogin()
-    ↓
-auth().signInWithEmailAndPassword(
-    `${dni}@conductor.com`, password
-)
-    ↓
-Firebase Auth valida credenciales
-    ↓
-onAuthStateChanged en DriverApp.tsx detecta user
-    ↓
-SendCoordinates(driverDni = email.split('@')[0])
-    ↓
-SendCoordinates monta useEffect
-    ↓
-loadAssignment() (C4.3): lee /choferes/{dni} y /asignaciones con
-timeout de 10s por intento y hasta 2 reintentos acotados
-    ↓
-queryDailyAssignment() (I08): orderByChild('choferId')/equalTo(dni) y
-selecciona con la fecha America/Lima resuelta, no con la del montaje
-    ├── Activa del día → valida busId y conserva el respaldo en memoria
-    ├── Ausente / cancelada / duplicada / otro chofer / datos inválidos
-    │   → mensaje de bloqueo; revoca el respaldo anterior
-    └── Error de red → errorCard (REINTENTAR / CERRAR SESIÓN)
+GPS watchPosition ─┐
+                   ├─→ writeLocation() ─→ updateBusLocation() ─→ RTDB
+Heartbeat (8 s) ───┘
 ```
 
-### Flujo de autenticación (UserApp)
+`writeLocation()` es la única ruta para publicar posiciones GPS y heartbeat;
+no es la única escritura de RTDB del ecosistema. `stopBusService()` escribe
+`isActive:false`, y AdminWeb inicializa o elimina `/ubicacion_buses/{placa}` al
+gestionar un bus.
+
+Señales distintas que no deben confundirse:
+
+| Señal | Origen | Significado |
+|-------|--------|-------------|
+| Fix GPS | `watchPosition` | Coordenadas, heading y speed entregados por el dispositivo |
+| Intento de publicación | `writeLocation` | Se fija antes del `await`; el `timestamp` se toma al intentar publicar, no en el fix ni en el servidor |
+| Pulso local | `PRO_LOCATION_PULSE` | Señal para la UI y el watchdog; se emite antes de intentar escribir y aunque la escritura falle |
+| Resultado/ACK de la promesa | `updateBusLocation` / `stopBusService` | Éxito o fallo local de la operación; no certifica que otro cliente lo haya leído ni la frescura remota |
+| Recepción | `on('value')` en El Burrito | Snapshot completo del nodo, con una hora de recepción por snapshot |
+
+El heartbeat de 8 s solo publica si ya existe una `lastLocation` y si no hubo
+un intento de escritura reciente. Un fallo de escritura reinicia el contador
+para permitir el siguiente intento y evitar una cola propia. La lógica completa
+está en §8.3.
+
+### 5.2 Recepción RTDB: snapshots completos e I06
+
+`MapService` se suscribe a `/ubicacion_buses` y recibe snapshots completos del
+nodo; no recibe deltas independientes por bus. Por cada snapshot toma una hora
+de recepción y valida cada entrada. La regla general I06 rechaza valores
+explícitamente inválidos de coordenadas, timestamp e `isActive`; las excepciones
+y límites aprobados son:
+
+- **I06-A (limitación aceptada)**: los campos ausentes o `null` conservan los
+  respaldos de coordenadas `0` y timestamp `Date.now()`. No se rechazan todos
+  los registros incompletos. Una detención sin coordenadas válidas conserva la
+  posición previa y pasa a offline; se mantiene I05.
+- **I06-B**: un timestamp explícito mayor que la hora de recepción + 300 000 ms
+  se rechaza y no se entrega al store. El límite de +300 000 ms es inclusivo; no
+  se recorta. La última ubicación válida y su caducidad se conservan. El margen
+  tolera diferencias de reloj, no deriva del heartbeat ni prueba sincronización
+  de relojes.
+- **Deduplicación I05**: se acepta un timestamp más nuevo; también se acepta la
+  transición activo → inactivo con el mismo timestamp. Los datos viejos y las
+  reactivaciones con timestamp igual se rechazan.
+
+El mecanismo de recepción no borra una entrada por el hecho de que falte en un
+snapshot: el store mezcla las entradas aceptadas con su estado anterior.
+
+### 5.3 Estado visual, multi-bus y caducidad
+
+La fuente de datos es multi-bus: el store conserva
+`Record<string, BurritoLocation>`. Sin embargo, la UI actual no renderiza toda
+la flota. `Map.tsx` y `MapBranding.tsx`:
+
+1. Filtran entradas con `isActive !== false`.
+2. Ordenan por `timestamp` descendente.
+3. Seleccionan la primera entrada.
+
+No buscan una alternativa fresca ni eligen un bus arbitrario. El render
+multi-marcador completo sigue pendiente (ROADMAP T4.4).
+
+La caducidad de 30 s se evalúa cada 2 s y cambia el estado del bus a `offline`
+cuando `!isActive` o cuando la edad del timestamp alcanza el umbral. Ese estado
+oculta el marcador y el radar en `Map.tsx`, pero no elimina necesariamente la
+entrada de `locations` ni escribe `isActive:false` en RTDB. Un bus activo pero
+viejo puede seguir siendo el seleccionado y mostrarse como `SIN SEÑAL`.
+
+La clasificación en vivo usa la **estrategia C experimental** (distancia, Δt,
+speed condicional y memoria con `STOP_CONFIRM_PAIRS=2`). `MOVEMENT_THRESHOLD_M`
+(8 m) pertenece a la estrategia A histórica y no decide el estado en vivo. Los
+parámetros de `movement.ts` son calibración pendiente, no valores definitivos
+(ADR-020).
+
+### 5.4 Feedback de El Burrito
+
+`CustomDrawer` obtiene el UID de Firebase Auth y `MapService.sendFeedback()`
+lo contrasta con la sesión vigente antes de crear un hijo mediante
+`push().set()`, con `ServerValue.TIMESTAMP`. Las reglas publicadas exigen
+creación con UID propio y rating entero 1–5; deniegan editar o borrar
+comentarios. Los permisos de conductores y asignaciones se detallan en
+`FIREBASE_SCHEMA.md` §9.
+
+### 5.5 Autenticación de El Burrito
 
 ```
-SignInScreen.handleLogin()
+SignInScreen.handleEmailLogin()
     ↓
-auth().signInWithEmailPassword(email, password)
+firebaseAuth.signInWithEmailAndPassword(email, password)
     ↓
-Lee /usuarios/{uid}.once('value')  → obtiene nombre, avatar
+Lee /usuarios/{uid}
     ↓
 Actualiza /usuarios/{uid}/ultimaConexion = ServerValue.TIMESTAMP
     ↓
-userStore.login(uuid, username, avatar, email, 'estudiante')
+userStore.login(uid, username, avatar, email, 'estudiante')
     ↓
-StackNavigator detecta isLoggedIn=true → renderiza DrawerNavigator (MapScreen)
+StackNavigator detecta isLoggedIn=true → DrawerNavigator → MapScreen
 ```
 
-### Flujo admin (AdminWeb)
+La API correcta es `signInWithEmailAndPassword`. El login con Google usa
+`@react-native-google-signin/google-signin`, configurado con `webClientId` y
+`offlineAccess:true`; `AvatarPickerScreen` completa el registro cuando
+corresponde.
+
+### 5.6 Flujo administrativo
 
 ```
-Admin crea conductor:
-    ChoferesScreen → createChofer({ dni, nombre, apellidos })
-        → app temporal: createUserWithEmailAndPassword(`${dni}@conductor.com`, dni)
-        → /choferes/{dni}.set({ nombre, apellidos, activo: true, uid, creadoEn, creadoPor })
-        → /choferes_uids/{uid}.set(dni)
+createChofer:
+    Auth temporal (${dni}@conductor.com)
+    → /choferes/{dni}
+    → /choferes_uids/{uid}
 
-Admin crea bus:
-    BusesScreen → createBus({ placa })
-        → /buses/{placa}.set({ activo: true, creadoEn, creadoPor })
-        → /ubicacion_buses/{placa}.set({ isActive: false })
+createBus:
+    → /buses/{placa}
+    → /ubicacion_buses/{placa} = { isActive:false }
 
-Admin asigna:
-    AsignacionesScreen → createAsignacion(choferId, busId, fecha, turnos[])
-        → Valida fecha Lima hoy/futuro y que el conductor no tenga otra asignación activa esa fecha
-        → Valida turnos (mínimo 1, inicio < fin, mismo día, sin solape) y los ordena
-        → /asignaciones.push().set({ choferId, busId, fecha, activo: true, turnos, horaInicio, horaFin, createdAt, createdBy })
+createAsignacion:
+    → /asignaciones/{pushId} con choferId, busId, fecha, turnos,
+      createdAt y createdBy
 
-Admin edita turnos:
-    AsignacionesScreen → updateTurnos(asignacionId, turnos[])
-        → Valida/ordena los turnos y actualiza solo ese nodo
-        → Conserva choferId, busId, fecha, createdAt y createdBy
-        → horaInicio/horaFin quedan como espejo del primer turno
+updateTurnos:
+    → actualiza turnos y espejo horaInicio/horaFin del mismo nodo
 
-Admin crea admin:
-    AdminsScreen → createAdmin(dni, nombres, apellidos, password)
-        → app temporal: createUserWithEmailAndPassword(`${dni}@admin.com`, password)
-        → /administradores/{uid}.set({ dni, nombres, apellidos, correo, creadoEn, creadoPor })
+createAdmin:
+    Auth temporal (${dni}@admin.com)
+    → /administradores/{uid}
 ```
+
+Los payloads completos, reglas e índices están en `FIREBASE_SCHEMA.md`. Las
+validaciones y limitaciones del panel están en §3.1.
 
 ## 6. Componentes Principales
+
+Inventario central de archivos relevantes. Los árboles completos de directorios
+pertenecen al README de cada aplicación; esta tabla es el mapa de arquitectura.
 
 ### BurritoDriverApp
 
 | Archivo | Responsabilidad |
 |---------|----------------|
-| `index.js` | Registro de la app, comentario sobre persistence desactivada, import gesture-handler |
-| `src/DriverApp.tsx` | Auth gate (login ↔ tracking conductor) |
-| `src/screen/LoginDriverScreen.tsx` | Login con DNI, manejo de errores de autenticación |
-| `src/screen/SendCoordinates.tsx` | Validación diaria de asignación, permisos, foreground service, GPS, debug console |
+| `index.js` | Registro de la app; comentario sobre persistencia desactivada; import de gesture-handler |
+| `src/DriverApp.tsx` | Auth gate (login ↔ tracking conductor); sincronización de Crashlytics |
+| `src/screen/LoginDriverScreen.tsx` | Login con DNI, construcción del email y manejo de errores |
+| `src/screen/SendCoordinates.tsx` | Asignación diaria, permisos, foreground service, GPS, heartbeat, watchdog, debug |
 | `src/services/firebase_service.ts` | `updateBusLocation()` y `stopBusService()` contra RTDB |
 | `src/shared/utils/timeout.ts` | Helper con timeout para lecturas RTDB |
 
@@ -532,326 +460,375 @@ Admin crea admin:
 | Archivo | Responsabilidad |
 |---------|----------------|
 | `src/main.tsx` | Entry point de la SPA (BrowserRouter + ToastProvider) |
-| `src/App.tsx` | Auth gate: sesión → rol (checking/admin/denied/error) |
-| `src/index.css` + `src/styles/*` | Sistema de diseño por tokens (tokens, base, layout, componentes, overlays, pantallas) |
+| `src/App.tsx` | Auth gate: sesión → rol (`checking/admin/denied/error`) |
+| `src/index.css` + `src/styles/*` | Sistema de diseño por tokens |
 | `src/screen/LoginScreen.tsx` | Login admin (DNI → `{dni}@admin.com`) |
-| `src/navigation/AdminNavigator.tsx` | Rutas del panel (dentro del `AppShell`) |
-| `src/shared/layout/AppShell.tsx` | Sidebar + topbar + drawer móvil; provee la sesión |
+| `src/navigation/AdminNavigator.tsx` | Rutas del panel dentro de `AppShell` |
+| `src/shared/layout/AppShell.tsx` | Sidebar, topbar y drawer móvil; provee la sesión |
 | `src/shared/layout/SessionContext.tsx` | Datos del admin en sesión (`useSession`) |
-| `src/shared/ui/*` | Primitivas de UI y overlays (Button, Field, Card, Modal, Toast, Icon…) |
-| `src/features/admin/services/admin_service.ts` | CRUD (Auth temporal + RTDB) |
+| `src/shared/ui/*` | Primitivas de UI y overlays (Button, Field, Card, Modal/ConfirmDialog, Toast, Icon) |
+| `src/features/admin/services/admin_service.ts` | CRUD con Auth temporal + RTDB |
 | `src/features/admin/services/admin_check.ts` | `existeAdministrador(uid)` con timeout |
-| `src/features/admin/screen/ChoferesScreen.tsx` | Gestión de conductores (crear, editar, activar/desactivar) |
+| `src/features/admin/screen/ChoferesScreen.tsx` | Gestión de conductores |
 | `src/features/admin/screen/BusesScreen.tsx` | CRUD de buses |
-| `src/features/admin/screen/AsignacionesScreen.tsx` | Formulario y listado por fecha, editar horarios |
+| `src/features/admin/screen/AsignacionesScreen.tsx` | Asignaciones por fecha y edición de turnos |
 | `src/features/admin/screen/AdminsScreen.tsx` | Gestión de administradores |
 | `src/features/admin/components/TurnosEditor.tsx` | Editor reutilizable de turnos |
 | `src/features/admin/utils/turno.ts` | Modelo, validación y formato de turnos |
 | `src/features/admin/utils/turnoDraft.ts` | Estado de edición de turnos |
 | `src/shared/config/env.ts` | Validación de variables `VITE_FIREBASE_*` |
 | `src/shared/config/firebase.ts` | Instancia de Firebase (Firebase JS SDK) |
-| `src/shared/utils/dni.ts` | Normalización y validación de DNI (8 dígitos) |
-| `src/shared/utils/date.ts` | Fechas de calendario America/Lima (hoy, validación, formato) |
+| `src/shared/utils/dni.ts` | Normalización y validación de DNI |
+| `src/shared/utils/date.ts` | Fechas de calendario America/Lima |
 | `src/shared/utils/format.ts` | Formateo de fechas y nombres de admin |
 
-### BurritoUserApp
+### El Burrito
 
 | Archivo | Responsabilidad |
 |---------|----------------|
-| `src/app/App.tsx` | Montaje global, splash nativo (bootsplash), hidratación, Firebase offline/online |
-| `src/features/map/screen/MapScreen.tsx` | Orquestador del mapa, inicializa tracking |
-| `src/features/map/components/Map.tsx` | Mapbox canvas, marcadores, ruta, radar |
-| `src/features/map/components/CustomDrawer.tsx` | Drawer animado con perfil, tema, feedback (sin admin) |
-| `src/features/map/services/map_service.ts` | Listener RTDB a `/ubicacion_buses`, envío de feedback |
-| `src/store/burritoLocationStore.ts` | Estado del tracking, dedup, clasificación moving/stopped/offline |
-| `src/store/userStore.ts` | Sesión persistente del usuario (solo 'estudiante') |
-| `src/store/themeStore.ts` | Dark mode con persistencia AsyncStorage |
+| `src/app/App.tsx` | Montaje global, hidratación, Google Sign-In, Firebase offline/online, splash |
+| `src/app/navigations/StackNavigator.tsx` | Auth gate declarativo |
+| `src/app/navigations/DrawerNavigator.tsx` | Drawer con MapScreen |
+| `src/features/map/screen/MapScreen.tsx` | Orquestador del mapa y ciclo start/stop del store |
+| `src/features/map/components/Map.tsx` | Canvas Mapbox, selección y render del marcador, ruta, radar |
+| `src/features/map/components/MapBranding.tsx` | Estado moving/stopped/offline |
+| `src/features/map/components/CustomDrawer.tsx` | Perfil, tema, feedback y logout |
+| `src/features/map/services/map_service.ts` | Listener RTDB, validación I06 y feedback |
+| `src/features/map/utils/geo.ts` | Haversine (`calculateDistance`) |
+| `src/features/map/utils/movement.ts` | Estrategia C experimental y su memoria |
+| `src/features/auth/services/studentLogout.ts` | Logout estudiantil y tareas best-effort |
+| `src/store/burritoLocationStore.ts` | Tracking, dedup, caducidad y clasificación de movimiento |
+| `src/store/userStore.ts` | Sesión persistente del estudiante |
+| `src/store/themeStore.ts` | Dark mode con AsyncStorage |
 | `src/shared/config/firebase.ts` | Instancia compartida de Firebase |
 
 ## 7. Servicios Externos
 
+Firebase es el backend administrado del ecosistema. El proyecto no mantiene un
+servidor propio ni una API intermedia.
+
 ### Firebase
 
-| Servicio | Uso en DriverApp | Uso en UserApp |
-|----------|-----------------|----------------|
-| Firebase Auth | Login de conductor (App móvil). *AdminWeb:* login de admin y creación de cuentas con app temporal | Login email/password + Google Sign-In |
-| Firebase RTDB | `/ubicacion_buses/{busId}` (write), `/asignaciones` (read) | `/ubicacion_buses`, `/usuarios`, `/comentarios` |
-| Firebase Analytics | No | Eventos de usuario (mapa abierto, mapa centrado) |
-| Firebase Crashlytics | Sí (`setUserId` con el uid; `setUserId('')` sin sesión) | Configurado en firebase.json |
-| ServerValue.TIMESTAMP | No | Sí (6 ocurrencias: ultimaConexion, feedback) |
+| Servicio | BurritoDriverApp | El Burrito | AdminWeb |
+|----------|------------------|------------|----------|
+| Firebase Auth | Login de conductor | Login email/password + Google Sign-In | Login de admin y creación de cuentas con app temporal |
+| Firebase RTDB | `/ubicacion_buses/{busId}` (write), `/asignaciones` y `/choferes` (read) | `/ubicacion_buses` (listen), `/usuarios`, `/comentarios` | CRUD de configuración y lectura de listas |
+| Firebase Analytics | No | Eventos de usuario (mapa abierto, mapa centrado) | No documentado como uso activo |
+| Firebase Crashlytics | Sí (`setUserId` con UID o cadena vacía) | Configuración presente; no se acreditó telemetría activa en esta revisión | No documentado como uso activo |
+| `ServerValue.TIMESTAMP` | No | Sí (`ultimaConexion`, feedback) | No; los registros administrativos usan `Date.now()` |
+| Firebase Hosting | No | No | Sirve `dist/` con rewrites SPA y cache de assets |
 
-> **AdminWeb** usa Firebase Auth (login de admin + creación de
-> cuentas vía app temporal) y RTDB (gestión de `/choferes`, `/buses`,
-> `/asignaciones`, `/choferes_uids` y `/administradores`).
+> **AdminWeb** usa Firebase Auth para login y alta de cuentas, y RTDB para
+> `/choferes`, `/buses`, `/asignaciones`, `/choferes_uids` y
+> `/administradores`.
 
 > **Identidad y diagnóstico (I11):** `DriverApp.tsx` solicita
-> `setUserId(uid)` cuando Firebase Auth entrega un usuario y
-> `setUserId('')` cuando entrega `null`, incluido el arranque sin sesión.
-> La limpieza no elimina reportes históricos. El panel deja de imprimir
-> nombre, DNI y prefijo del DNI; conserva GPS, heartbeat, Firebase, bus,
-> asignaciones, permisos, watchdog, parada y errores con stack trace.
+> `setUserId(uid)` cuando Firebase Auth entrega un usuario y `setUserId('')`
+> cuando entrega `null`, incluido el arranque sin sesión. La limpieza no
+> elimina reportes históricos. El panel deja de imprimir nombre, DNI y prefijo
+> del DNI; conserva GPS, heartbeat, Firebase, bus, asignaciones, permisos,
+> watchdog, parada y errores con stack trace.
 
 ### Mapbox
 
-- SDK: `@rnmapbox/maps` v10.2.10
-- Token público vía `@env` (UserApp)
-- Renderizado: ruta LineString, paraderos como puntos, marcador del bus
-  con heading, radar animado, dark mode opcional
+- SDK: `@rnmapbox/maps` v10.2.10.
+- Token público vía `@env` en El Burrito.
+- Renderizado: ruta LineString, paraderos como puntos, marcador del bus con
+  heading, radar animado y dark mode opcional.
 
 ### Google Sign-In
 
-- SDK: `@react-native-google-signin/google-signin`
-- Config: `webClientId` desde `@env`
-- Inicializado en `App.tsx` con `offlineAccess: true`
-- Flujo: SignInScreen maneja login Google, AvatarPickerScreen completa
-  registro con nick de facultad
+- SDK: `@react-native-google-signin/google-signin`.
+- Configuración: `webClientId` desde `@env`.
+- Inicializado en `App.tsx` con `offlineAccess:true`.
+- Flujo: `SignInScreen` maneja el login Google; `AvatarPickerScreen` completa
+  el registro con nick de facultad.
 
 ### react-native-dotenv
 
-- UserApp usa `module:react-native-dotenv` para inyectar variables de
-  entorno desde `.env` vía `@env`
-- DriverApp no usa variables de entorno
+- El Burrito usa `module:react-native-dotenv` para inyectar variables desde
+  `.env` vía `@env`.
+- BurritoDriverApp no usa variables de entorno.
 
 ## 8. Ciclo de Vida del Tracking
 
-### Secuencia completa
+### 8.1 Carga inicial de la asignación
 
-```
-Estado inicial: app cerrada, sin sesión
-    ↓
-1. Abrir DriverApp
-    ↓
-2. LoginDriverScreen: ingresa DNI + contraseña
-    ↓
-3. Firebase Auth valida, onAuthStateChanged → user detectado
-    ↓
-4. DriverApp renderiza SendCoordinates(driverDni)
-    ↓
-5. useEffect: loadAssignment() consulta /choferes/{dni} y /asignaciones
-   con timeout de 10s por intento y hasta 2 reintentos acotados (C4.3).
-   La selección usa queryDailyAssignment() con la fecha America/Lima (I08).
-    ↓
-6. ¿Asignación activa del día encontrada?
-    ├── Sí: guarda busId y el respaldo en memoria; muestra el bus
-    ├── No: muestra "No tienes un bus asignado"
-    └── Error (se agotan los reintentos): errorCard
-        "No se pudo cargar tu asignación" con REINTENTAR y CERRAR SESIÓN
-    INICIAR permanece disponible: la validación ocurre al presionarlo (I08)
-    ↓
-7. Usuario presiona INICIAR RECORRIDO
-    ↓
-7a. Revalida la asignación del día (I08):
-     ├── Consulta válida → usa esa asignación y fija trackingIntent.run
-     ├── Respuesta conocida inválida/ausente → bloquea y revoca el respaldo
-     └── Consulta fallida + .info/connected == false + respaldo del mismo
-         conductor/día → continúa con el respaldo en memoria (ruta B)
-         Un timeout aislado no autoriza el respaldo
-    ↓
-8. requestAllPermissions():
-    ├── POST_NOTIFICATIONS (API 33+)
-    ├── ACCESS_FINE_LOCATION
-    └── ACCESS_BACKGROUND_LOCATION
-    ↓
-9. BackgroundJob.start(locationTask, {
-       foregroundServiceType: ['location'],
-       taskTitle: "El Bus {busId} está en ruta",
-       ...
-   })
-    ↓
-10. Sistema Android muestra notificación persistente
-    ↓
-11. locationTask ejecuta Geolocation.watchPosition()
-    ↓
-12. GPS callback o heartbeat (T4.1, cada 8 s) → writeLocation()
-    → updateBusLocation(busId, { lat, lng, heading, speed, timestamp, isActive: true })
-    ↓
-13. Firebase RTDB recibe escritura en /ubicacion_buses/{busId}
-    ↓
-13a. Cada escritura (GPS o heartbeat) emite un pulso (PRO_LOCATION_PULSE)
-    hacia la UI antes de escribir
-    ↓
-13b. Watchdog (C3): intervalo 10s, timeout 30s sin pulso
-     ├── Pulso presente: no hace nada
-     └── Sin pulso e intención vigente, sin transición en curso: restartBackgroundJob()
-          ├── Limpieza propia + BackgroundJob.stop() + inicio si la generación sigue vigente
-          ├── Éxito: log "🔄 SERVICIO REINICIADO"
-          └── Falla: isSending=false + Alert + banner persistente
-     ↓
-14. [Usuario presiona DETENER RECORRIDO]
-     ↓
-15. Invalida intención/generación antes del primer await; limpia watch, heartbeat y keepAlive
-     ↓
-16. BackgroundJob.stop() serializado con las demás transiciones nativas
-    ├── Falla: parada local no confirmada; INICIAR bloqueado, DETENER permite reintento
-    └── Éxito: solicita stopBusService(busId) → isActive = false, sin esperar ACK remoto
-     ↓
-17. (UI) Detenido e INICIAR disponible tras cierre local; el ACK remoto solo informa diagnóstico
+`SendCoordinates` monta `loadAssignment()` al entrar con sesión. El ciclo hace
+**dos intentos totales** de consulta (`ASSIGNMENT_RETRIES=2`), no dos reintentos
+adicionales. Cada intento tiene un timeout de 10 s que cubre la lectura
+opcional del nombre del conductor y la consulta de asignación. Entre el primero
+y el segundo hay una pausa de 1.5 s.
 
-Cerrar sesión (acción independiente, ADR-026):
-18. auth().signOut() → onAuthStateChanged → renderiza LoginDriverScreen
-```
+La consulta usa `queryDailyAssignment()`: `orderByChild('choferId')` con
+`equalTo(dni)` y resuelve la fecha en `America/Lima` al recibir la respuesta, no
+al montar. Descarta registros cancelados, duplicados, de otro conductor o con
+datos inválidos. El nombre del conductor es opcional: su fallo no invalida el
+intento.
 
-### Notas sobre el ciclo de vida
+Estados visibles:
 
-- **Foreground Service**: utiliza `react-native-background-actions` que
-  envuelve la API nativa `android.app.Service`. El servicio
-  (`RNBackgroundActionsTask`) corre en el mismo proceso que la actividad.
-- **Android 14**: requiere `foregroundServiceType="location"` en el
-  manifest, `FOREGROUND_SERVICE_LOCATION` en permisos, y
-  `foregroundServiceType: ['location']` en las opciones de JS.
-  La ausencia de cualquiera de los tres provoca
-  `InvalidForegroundServiceTypeException` en runtime.
-- **Watchdog (C3)**: `isRunning()` de la librería no detecta la muerte
-  nativa del servicio (flag JS que solo cambia con `stop()` explícito).
-  El watchdog usa `PRO_LOCATION_PULSE` del GPS y del heartbeat, no ACK de
-  Firebase. I07 exige intención/generación vigente y excluye inicio,
-  recuperación y parada en curso. Las llamadas nativas se serializan sin
-  incluir esperas de red; tras permisos y transiciones se vuelve a validar
-  la generación. Un inicio desde background puede ser rechazado por Android
-  14 (`ForegroundServiceStartNotAllowedException`); se avisa al conductor.
-- **Cierre idempotente (C4.2, actualizado por I07)**: `trackingIntent`
-  comparte intención, generación y transiciones entre montajes. DETENER
-  invalida antes del primer `await`; cada ejecución tiene identidad propia
-  y `dispose` idempotente para su watch, heartbeat y keepAlive. Las guardas
-  de callbacks y continuaciones impiden que una ejecución cancelada vuelva
-  a publicar o altere a su sucesora. Un fallo de `stop()` no es éxito:
-  conserva el error, bloquea INICIAR y permite reintentar DETENER.
-  Tras éxito nativo, la solicitud remota se emite antes de liberar INICIAR,
-  sin esperar confirmación. Sus ACK antiguos solo informan diagnóstico
-  como operación anterior; no reescriben ni cambian el estado local.
-- **Asignación diaria (I08)**: la validación usa `queryDailyAssignment()`,
-  que consulta `/asignaciones` por `choferId`, resuelve la fecha en
-  `America/Lima` al momento de la consulta y descarta registros cancelados,
-  duplicados, de otro conductor o con datos inválidos. Al presionar INICIAR
-  se revalida: una respuesta válida fija `trackingIntent.run =
-  { driverDni, busId }`, identidad que usan GPS y parada aunque el estado
-  remontado o la asignación cambien después. Los `turnos` siguen siendo
-  informativos: no habilitan ni bloquean el tracking (ADR-028).
-- **Respaldo offline de la asignación (I08)**: si la consulta falla por red
-  y `.info/connected` reporta desconexión, INICIAR puede continuar con el
-  respaldo en memoria, solo si corresponde al mismo conductor y a la misma
-  fecha. Ese respaldo no persiste entre procesos, se revoca ante una
-  respuesta conocida como inválida y no permite adivinar altas,
-  cancelaciones ni cambios administrativos ocurridos durante la
-  desconexión. Un timeout aislado no se interpreta como offline.
-- **Ruta especial `.info/connected` (I08)**: el SDK instalado solo acepta
-  la ruta sin barra inicial (`ref('.info/connected')`); con `/` lanza
-  excepción. La desconexión conocida habilita el respaldo, pero no prueba
-  entrega ni confirmación de escrituras remotas. Ver
-  `BUGS_RESUELTOS/driverapp.md` (CASO 021).
-- **Etiqueta de estado (I08)**: «Servicio de ubicación activo» describe el
-  servicio Android local en ejecución; no afirma que la última posición se
-  haya publicado en RTDB ni distingue conectado/desconectado. La UI no
-  agrega listeners de conectividad en esta fase (ADR-028).
-- **Restauración del estado al re-montar (C4.7, actualizado por I07)**:
-  `SendCoordinates` toma el estado compartido y escucha `PRO_TRACKING_STATE`
-  para recibir también el resultado de operaciones iniciadas antes del
-  remontaje, sin retener setters de la pantalla anterior. No basta con
-  `isRunning()` para restaurar: se exige intención vigente y envío activo,
-  sin inicio/recuperación en curso. Una parada cancelada no revive al volver;
-  un recorrido legítimo se restaura sin crear otro motor. El desmontaje no
-  detiene por sí mismo el servicio y `isActive` remoto no gobierna la UI.
-- **Límite HeadlessJS (I07)**: la promesa de usuario de `locationTask` queda
-  pendiente al limpiar para evitar el `stop()` global automático del wrapper
-  al resolverla. Esto no equivale a cerrar una envoltura HeadlessJS. En la
-  biblioteca 4.1.0, entregas tardías pueden sobrescribir el resolver global
-  y dejar envolturas pendientes; los tests caracterizan ese residual, no un
-  defecto del planificador Android reproducido ni dos motores GPS completos
-  simultáneos. Ver `BUGS_RESUELTOS/driverapp.md` (CASO 020).
-- **Doze Mode**: el foreground service evita que el SO suspenda el hilo
-  de GPS cuando la pantalla se apaga. Sin este servicio,
-  `watchPosition` se detiene al minimizar la app.
-- **Persistencia desactivada**: `database().setPersistenceEnabled(true)`
-  fue eliminado explícitamente (ADR-003). Desactivar persistencia en disco
-  no elimina las escrituras pendientes en memoria del SDK durante una
-  desconexión. Pueden confirmarse al reconectar; no se garantiza que cada
-  intento offline se descarte. I07 no agrega cola propia ni cancela
-  escrituras ya solicitadas: separa su confirmación del cierre local.
-- **Haversine / geofencing**: la función `calculateDistance()` existe
-  en `Map.tsx` pero la arquitectura actual **no incorpora geofencing**.
-  No hay cierre automático de vueltas ni escritura a `/recorridos`.
+| Condición | Acción disponible |
+|-----------|-------------------|
+| Cargando asignación, sin controles de tracking | Spinner |
+| Dos intentos agotados, sin controles | REINTENTAR y CERRAR SESIÓN |
+| Asignación válida, detenido | INICIAR RECORRIDO y CERRAR SESIÓN |
+| Sin bus asignado, detenido | INICIAR RECORRIDO y CERRAR SESIÓN (la revalidación al iniciar vuelve a bloquear si no hay asignación) |
+| Iniciando, enviando, deteniendo o parada fallida | DETENER RECORRIDO; no se muestra CERRAR SESIÓN |
 
-### Ramas de navegación (post-migración)
+INICIAR no está disponible durante la carga inicial ni en la tarjeta de error.
+La validación de asignación no ocurre solo al montar: se repite al presionar
+INICIAR.
 
-```
-LoginDriverScreen
-    ↓
-onAuthStateChanged
-    ├── user → SendCoordinates (tracking conductor)
-    │         ├── Botón "INICIAR RECORRIDO" → BackgroundJob.start()
-    │         ├── Botón "DETENER RECORRIDO" → BackgroundJob.stop() + stopBusService (isActive:false)
-    │         └── Botón "Cerrar sesión" (independiente) → auth().signOut() → LoginDriverScreen
-    └── null → LoginDriverScreen
-```
+### 8.2 Secuencia de INICIAR
 
-El panel de administración **no** forma parte de las ramas de la DriverApp;
-vive en AdminWeb (ver §3.1 y ADR-025).
+1. Se comprueba que no haya inicio, reinicio, parada o parada fallida en curso,
+   y que el servicio no esté ya activo.
+2. Se incrementa la generación, se marca `shouldRun=true` y `starting` con esa
+   generación.
+3. Se solicitan permisos en este orden exacto: `POST_NOTIFICATIONS` (API 33+),
+   `ACCESS_FINE_LOCATION` y `ACCESS_BACKGROUND_LOCATION`. Cada denegación
+   devuelve temprano.
+4. Se revalida la asignación diaria con timeout de 10 s.
+5. Si la respuesta conocida es inválida, ausente, cancelada, contradictoria o de
+   otro conductor, se revoca el respaldo y se bloquea el inicio.
+6. Si la consulta falla, solo se permite continuar cuando `.info/connected`
+   reporta `false` y existe un respaldo en memoria del mismo conductor y día.
+   Un timeout aislado no habilita el respaldo.
+7. Se vuelve a comprobar que la fecha siga siendo la de Lima. Si cambió el día,
+   se revoca el respaldo y se pide presionar INICIAR de nuevo.
+8. Se fija `trackingIntent.run = { driverDni, busId }` y se inicia el
+   `BackgroundJob` con las opciones de §9.1. La generación se revalida después
+   de cada espera.
 
-## 9. Consideraciones de Implementación
+La revalidación ocurre **después** de los permisos y **antes** de arrancar el
+servicio. No se reordena esa secuencia.
 
-### Android 14 (API 34)
+### 8.3 GPS, heartbeat y watchdog
 
-El `foregroundServiceType` debe declararse en tres lugares para que
-Android 14 acepte el servicio:
+`locationTask` ejecuta `Geolocation.watchPosition` con `enableHighAccuracy`,
+`distanceFilter:2`, `interval:3000` y `fastestInterval:2000`. El callback
+guarda la última posición, emite el pulso local y llama a `writeLocation()`.
 
-1. `AndroidManifest.xml`:
-   `<service android:foregroundServiceType="location" />`
-2. Permisos Android:
-   `<uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />`
-3. Opciones JS en `getBackgroundOptions()`:
-   `foregroundServiceType: ['location' as const]`
+`writeLocation()` usa `updateBusLocation(busId, {...coords, timestamp:
+Date.now()})`. Fija `lastWriteAt` antes del `await`, para que el heartbeat no se
+salte fuegos ni duplique escrituras; en fallo lo reinicia para permitir el
+siguiente intento. `timestamp` es el instante del intento de publicación, no el
+del fix GPS. Con bus quieto, el heartbeat refresca ese timestamp.
 
-### Estado del tracking
+El heartbeat corre cada 8 s dentro del mismo `locationTask`. Solo escribe si ya
+hay una `lastLocation` y si pasaron al menos 8 s desde el último intento. Emite
+el pulso antes de escribir, incluso si la escritura falla, y no abre una segunda
+ruta de escritura. Un `keepAlive` de 1 s verifica que el servicio siga en
+ejecución y limpia la ejecución si dejó de estarlo.
 
-- La arquitectura actual utiliza **múltiples buses como fuente** de datos.
-  La UserApp escucha `/ubicacion_buses` y recibe un `Record<string, BurritoLocation>`
-  con todas las placas activas. Los componentes de UI (`Map.tsx`, `MapBranding.tsx`)
-  derivan el estado del primer bus activo como fallback hasta que se implemente
-  el render multi-marcador completo (T4.4).
+El watchdog es un efecto de la pantalla, no del servicio. Se activa mientras
+`isSending` es verdadero, revisa cada 10 s y reinicia si pasaron más de 30 s sin
+pulso. Antes de reiniciar exige intención/generación vigente y ausencia de
+inicio, reinicio o parada en curso. Si el reinicio falla, detiene la UI, emite
+un Alert y deja un banner persistente.
 
-### Geofencing
+El watchdog solo puede actuar mientras la pantalla y el proceso JavaScript
+sigan vivos. Al desmontar la pantalla se elimina su intervalo y sus listeners,
+pero el motor GPS puede continuar en el foreground service. Al remontar, la UI
+restaura el estado si `shouldRun`, `sending` y `BackgroundJob.isRunning()`
+siguen vigentes; el watchdog nuevo empieza con un reloj nuevo. No es una
+garantía de supervivencia del proceso ni cubre un kill del sistema operativo.
 
-- Actualmente la arquitectura no incorpora geofencing. Su planificación
-  está en ROADMAP.md (T4.3).
+### 8.4 DETENER
 
-### Índices de RTDB
+DETENER captura la identidad del recorrido antes del primer `await`, invalida
+la intención/generación, limpia los recursos locales y serializa la parada
+nativa con las demás transiciones.
 
-- DriverApp usa `orderByChild('choferId')` sobre `/asignaciones`. Esto
-  requiere un índice definido en Firebase Rules:
-  ```json
-  {
-    "asignaciones": {
-      ".indexOn": "choferId"
-    }
+- Si `BackgroundJob.stop()` falla, la parada local no está confirmada: se
+  bloquea INICIAR y se permite reintentar DETENER.
+- Si la parada nativa tiene éxito, se solicita `stopBusService(run.busId)`
+  (`isActive:false`) antes de liberar INICIAR, sin esperar la confirmación
+  remota.
+- El resultado de la operación remota solo informa diagnóstico. Un ACK antiguo
+  no reescribe el estado local ni cambia la identidad del recorrido nuevo.
+- `trackingIntent.run` se libera cuando la parada local se confirma; el
+  resultado remoto no decide esa liberación.
+
+`isActive:false` se escribe en la parada funcional. Un kill anormal del proceso,
+un crash nativo o una pérdida de ejecución pueden dejar `isActive:true`; el
+watchdog dentro del proceso no cubre ese caso. No hay `onDisconnect`.
+
+### 8.5 Cerrar sesión y relevos
+
+CERRAR SESIÓN ejecuta `auth().signOut()` y vuelve a `LoginDriverScreen`. No
+detiene el servicio ni escribe `isActive:false`; es una acción distinta de
+DETENER. Su visibilidad en la UI no es simultánea con el recorrido activo.
+
+El piloto usa un teléfono compartido: la sesión se mantiene durante los
+relevos y el conductor no necesariamente cierra sesión al terminar su turno. La
+cuenta autenticada identifica la sesión del teléfono, no necesariamente a la
+persona física que lleva el bus en ese momento. Esta es una condición operativa
+del MVP y una limitación de identidad, no una función de cambio automático de
+conductor.
+
+### 8.6 Identidad I08 y respaldo offline
+
+Al validar INICIAR, `trackingIntent.run` fija `{driverDni, busId}`. Esa
+identidad la usan GPS y la parada aunque la pantalla se remonte o la asignación
+cambie después. Los `turnos` son informativos: no habilitan ni bloquean el
+tracking (ADR-028).
+
+El respaldo de asignación vive en un `useRef` de la pantalla, no en el objeto
+compartido de intención. Solo sirve para el mismo conductor y la misma fecha.
+No persiste entre procesos, se revoca ante una respuesta conocida como inválida
+y no permite adivinar altas, cancelaciones ni cambios administrativos ocurridos
+durante la desconexión. Un timeout aislado no equivale a offline.
+
+`.info/connected` debe consultarse sin barra inicial (`ref('.info/connected')`)
+porque el SDK instalado lanza excepción con `/`. Que reporte `false` habilita el
+respaldo, pero no prueba entrega ni confirmación de escrituras remotas. Ver
+`BUGS_RESUELTOS/driverapp.md` (CASO 021).
+
+### 8.7 I07: idempotencia, restauración y HeadlessJS
+
+El foreground service se implementa con `react-native-background-actions` 4.1.0
+y `RNBackgroundActionsTask`. En la configuración actual, la Activity y el Service
+comparten el proceso Android, pero tienen ciclos de vida distintos.
+
+`trackingIntent` comparte intención, generación y transiciones entre montajes.
+DETENER invalida antes del primer `await`. Cada ejecución de GPS tiene identidad
+propia y un `dispose` idempotente para su watch, heartbeat y keepAlive. Las
+guardas de callbacks y continuaciones impiden que una ejecución cancelada vuelva
+a publicar o altere a su sucesora.
+
+Un fallo de `stop()` no es éxito: conserva el error, bloquea INICIAR y permite
+reintentar DETENER. Tras el éxito nativo, la solicitud remota se emite antes de
+liberar INICIAR, sin esperar confirmación. Los ACK antiguos solo informan
+diagnóstico como operación anterior.
+
+Al re-montar, `SendCoordinates` recupera el estado compartido y escucha
+`PRO_TRACKING_STATE` para operaciones iniciadas antes del remontaje. No basta
+`isRunning()`: se exige intención vigente y envío activo, sin inicio o
+recuperación en curso. Una parada cancelada no revive; un recorrido legítimo se
+restaura sin crear otro motor. El desmontaje no detiene por sí mismo el
+servicio.
+
+La promesa de usuario de `locationTask` queda pendiente al limpiar para evitar
+el `stop()` global automático del wrapper al resolverla. En esa versión, entregas
+tardías pueden sobrescribir el resolver global y dejar envolturas pendientes. Los
+tests caracterizan ese residual; no hay dos motores GPS
+completos simultáneos. Ver `BUGS_RESUELTOS/driverapp.md` (CASO 020).
+
+### 8.8 Persistencia y estado de la UI
+
+La persistencia en disco no está activada: no se llama a
+`database().setPersistenceEnabled(true)` (ADR-003). Desactivar la persistencia
+en disco no elimina las escrituras pendientes en memoria del SDK durante una
+desconexión: pueden confirmarse al reconectar. No se garantiza que cada intento
+offline se descarte. I07 no agrega cola propia ni cancela escrituras ya
+solicitadas; separa su confirmación del cierre local.
+
+La etiqueta «Servicio de ubicación activo» describe el servicio Android local en
+ejecución. No afirma que la última posición se haya publicado en RTDB ni
+distingue conectado/desconectado. La UI no agrega listeners de conectividad en
+esta fase (ADR-028).
+
+## 9. Consideraciones de Implementación y Límites
+
+### 9.1 Android 14 y foreground service
+
+`foregroundServiceType` debe declararse en tres lugares coherentes:
+
+1. `AndroidManifest.xml`: `<service android:foregroundServiceType="location" />`.
+2. Permiso: `FOREGROUND_SERVICE_LOCATION` (además de `FOREGROUND_SERVICE`,
+   `ACCESS_BACKGROUND_LOCATION` y `POST_NOTIFICATIONS`).
+3. Opciones JS de `getBackgroundOptions()`:
+   `foregroundServiceType: ['location' as const]`.
+
+La configuración actual también usa `android:stopWithTask="false"` para que
+cerrar la tarea no detenga el servicio. Eso no cubre un kill del proceso ni una
+restricción del fabricante.
+
+Un faltante de configuración puede producir excepciones específicas como
+`MissingForegroundServiceTypeException` o `SecurityException`; no todas las
+causas producen la misma `InvalidForegroundServiceTypeException`. Un inicio
+desde background puede ser rechazado con
+`ForegroundServiceStartNotAllowedException`, que la app informa al conductor.
+
+El foreground service reduce la suspensión mientras está correctamente
+configurado y autorizado, pero no garantiza ejecución ilimitada, inmunidad a
+Doze, una cadencia exacta ni supervivencia a la terminación del proceso. Sin el
+servicio, `watchPosition` puede detenerse al minimizar la app. No se debe
+atribuir al sistema una garantía que el código no controla.
+
+### 9.2 Multi-bus, caducidad y deuda pendiente
+
+La selección de un solo bus, la caducidad y el estado `offline` se explican en
+§5.3. El render multi-marcador completo sigue pendiente (ROADMAP T4.4) y no debe
+presentarse como implementado.
+
+### 9.3 Geofencing y Haversine
+
+`calculateDistance()` está en `User/src/features/map/utils/geo.ts` y lo usa
+`burritoLocationStore.ts` para la clasificación de movimiento. No está en
+`Map.tsx`.
+
+La arquitectura actual no incorpora geofencing, cierre automático de vueltas ni
+escritura a `/recorridos`. Su planificación está en ROADMAP T4.3. Haversine ya
+se utiliza; geofencing sigue pendiente.
+
+### 9.4 Índices de RTDB
+
+La consulta I08 usa `orderByChild('choferId')` sobre `/asignaciones`. El índice
+`.indexOn` debe existir en la configuración desplegada para evitar advertencias
+y escaneos costosos:
+
+```json
+{
+  "asignaciones": {
+    ".indexOn": "choferId"
   }
-  ```
-  Sin este índice, Firebase rechazará la consulta en producción o la
-  ejecutará ineficientemente en clientes.
+}
+```
 
-### Compatibilidad iOS
+El índice es una optimización de rendimiento, no un mecanismo de autorización.
+Las bibliotecas cliente pueden ejecutar consultas ad hoc sin él; la ausencia de
+índice no convierte por sí sola la consulta en una denegación de permisos. La
+autorización se define en las reglas de seguridad, que tampoco actúan como
+filtros de resultados. La consulta debe cumplir las reglas y, por separado,
+conviene que tenga el índice para operar eficientemente.
 
-- DriverApp no está probada ni soportada en iOS. El Foreground Service
-  depende de APIs nativas de Android no disponibles en iOS.
-- UserApp sí soporta iOS (configuración nativa con CocoaPods,
-  GoogleService-Info.plist).
+### 9.5 Compatibilidad iOS
 
-### Separación de productores
+BurritoDriverApp no está probada ni soportada en iOS: el foreground service
+depende de APIs nativas de Android.
 
-- El sistema actual recibe datos de tracking desde dos fuentes: la
-  DriverApp física y un script Python de simulación. Ambos escriben a
-  paths distintos. La UserApp consume de una sola fuente. La unificación
-  de fuentes está planificada como parte de la evolución del sistema.
+En El Burrito existe configuración iOS, pero el soporte funcional **no está
+acreditado**. La inspección encontró un `Podfile` con target
+`BurritoFeatureTest`, un `AppDelegate.swift` que registra el módulo
+`BurritoFeatureTest`, un `app.json` con nombre `BurritoUserApp` y referencias
+heredadas a `MapsApp` en el proyecto Xcode. No se encontró un
+`GoogleService-Info.plist` versionado ni la inicialización de Firebase en el
+AppDelegate inspeccionado. Esto no autoriza a declarar soporte iOS completo ni a
+reparar esa configuración desde este documento.
+
+### 9.6 Productores y simulación
+
+El productor actual acreditado en el código es BurritoDriverApp, que escribe en
+`/ubicacion_buses/{busId}`. No se acreditó en esta revisión un script Python
+versionado, una carpeta de simulación ni una integración actual que escriba a
+otro path como segundo productor. Si existe una herramienta externa de
+simulación, debe documentarse por separado con su ruta, propósito y estado; no
+se presenta aquí como parte de la topología productiva.
 
 ## 10. Referencias
 
 | Documento | Relación |
 |-----------|----------|
 | `PROJECT_CONTEXT.md` | Visión general del ecosistema, propósito y estado. |
-| `FIREBASE_SCHEMA.md` | Estructura detallada de nodos, payloads e índices de la RTDB. |
-| `ROADMAP.md` | Planificación posterior al MVP y dependencias. |
-| `TROUBLESHOOTING.md` | Incidentes, bugs históricos y soluciones. |
+| `FIREBASE_SCHEMA.md` | Estructura detallada de nodos, payloads, reglas e índices de RTDB. |
 | `DECISIONS.md` | Decisiones de arquitectura (ADR) con razonamiento técnico. |
-| Driver/README.md | Setup, requisitos y funcionalidad de DriverApp. |
-| User/README.md | Setup, requisitos y funcionalidad de UserApp. |
-| AdminWeb/README.md | Setup, requisitos y funcionalidad del panel de administración. |
-| `BUGS_RESUELTOS/` | Historial de bugs resueltos durante el desarrollo. |
+| `ROADMAP.md` | Planificación posterior al MVP y dependencias. |
+| `../MVP.md` | Operación del piloto, aceptación de jornada y supuestos de relevo. |
+| `TROUBLESHOOTING.md` | Incidentes, diagnóstico y soluciones operativas. |
+| `BUGS_RESUELTOS/` | Historial de bugs resueltos y evidencia de validación. |
+| `../Driver/README.md` | Setup, requisitos y funcionalidad de BurritoDriverApp. |
+| `../User/README.md` | Setup, requisitos y funcionalidad de El Burrito. |
+| `../AdminWeb/README.md` | Setup, requisitos y funcionalidad del panel administrativo. |
