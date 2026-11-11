@@ -230,8 +230,7 @@ se mantiene. El ecosistema incorporó AdminWeb como tercera aplicación y
 cada producto tiene historial Git independiente. La decisión original
 sobre las apps móviles no se reescribe.
 
-**Referencias:** PROJECT_CONTEXT.md (sección 2), ARCHITECTURE.md
-(sección 2), ADR-025.
+**Referencias:** ARCHITECTURE.md (secciones 1 y 2), ADR-025.
 
 ---
 
@@ -1556,9 +1555,8 @@ valor para diagnosticar fallos del MVP y no debían eliminarse en bloque.
 - El orden de finalización nativa de `setUserId` no está garantizado; las
   pruebas solo cubren el orden de solicitudes y el comportamiento observable.
 
-**Referencias:** ARCHITECTURE.md (§7, servicios externos),
-BUGS_RESUELTOS/driverapp.md (CASO 022), PROJECT_CONTEXT.md (§4 y §5),
-ADR-026, Driver commit `4a05e41`.
+**Referencias:** ARCHITECTURE.md (§7, servicios externos; §9, límites),
+BUGS_RESUELTOS/driverapp.md (CASO 022), ADR-026, Driver commit `4a05e41`.
 
 ---
 
@@ -1609,9 +1607,8 @@ activos/inactivos, aislamiento entre placas, I06-A y dos secuencias del
 pipeline real servicio → store). User 124/124 en diez suites; TypeScript
 aprobado y lint sin deuda nueva (21 errores/50 warnings globales previos).
 
-**Referencias:** ARCHITECTURE.md §5; FIREBASE_SCHEMA.md §3;
-PROJECT_CONTEXT.md §5; BUGS_RESUELTOS/userapp.md (CASO 019); MVP.md §1;
-User commit `011a4b6`.
+**Referencias:** ARCHITECTURE.md §5 y §9; FIREBASE_SCHEMA.md §3;
+BUGS_RESUELTOS/userapp.md (CASO 019); MVP.md §1; User commit `011a4b6`.
 
 ---
 
@@ -1619,8 +1616,7 @@ User commit `011a4b6`.
 
 | Documento | Relación |
 |-----------|----------|
-| `PROJECT_CONTEXT.md` | Visión general y propósito del sistema. |
-| `ARCHITECTURE.md` | Flujo de datos, ciclo de vida y componentes. |
+| `ARCHITECTURE.md` | Visión general, flujo de datos, ciclo de vida y componentes. |
 | `FIREBASE_SCHEMA.md` | Estructura de nodos impactada por estas decisiones. |
 | `TROUBLESHOOTING.md` | Problemas derivados de estas decisiones. |
 | `ROADMAP.md` | Planificación post-MVP y referencias a las ADR planeadas. |

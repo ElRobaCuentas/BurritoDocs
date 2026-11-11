@@ -300,5 +300,5 @@ jornada de ~8 h sigue pendiente.
 
 **Límite:** tolerancia autorizada, no sincronización horaria. Desfases
 persistentes pueden descartar datos, y adelantos dentro del margen pueden
-demorar datos posteriores. Ver ADR-030 y PROJECT_CONTEXT.md §5.
+demorar datos posteriores. Ver ADR-030 y `ARCHITECTURE.md` §5 y §9.
 

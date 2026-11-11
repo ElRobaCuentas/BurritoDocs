@@ -49,7 +49,7 @@ con 6 tests unitarios (T2.2), disponible para T4.3 y T5.2.
 | Tarea | Decisión vigente | Referencia |
 |-------|------------------|------------|
 | I09 — Autorización GPS por asignación | Postergada; no condiciona I03/I08. | FIREBASE_SCHEMA §9 |
-| I10 — Heartbeat/antigüedad del fix GPS | Postergada; conservar comportamiento aprobado. | PROJECT_CONTEXT §5 |
+| I10 — Heartbeat/antigüedad del fix GPS | Postergada; conservar comportamiento aprobado. | ARCHITECTURE §8.3 |
 | P06 — Perfil incompatible | Postergada; no reabrir automáticamente. La fuente original `correciones_piloto_pruebas.md` fue retirada; no es un enlace vigente. | Decisión preservada del registro anterior de ROADMAP.md (Git). |
 | Mantenimiento — Eliminar registro legacy `com.burritouserapp` (`b9b8149c`) en Firebase Console | No bloqueante; limpieza post-MVP. No afecta T1. | Firebase Console |
 

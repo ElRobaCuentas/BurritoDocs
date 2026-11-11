@@ -601,7 +601,7 @@ pasados.
 **Referencias:**
 - `ARCHITECTURE.md` (§7, servicios externos)
 - `DECISIONS.md` (ADR-029)
-- `PROJECT_CONTEXT.md` (§4 y §5)
+- `ARCHITECTURE.md` (§9, límites)
 - `Driver/__tests__/SendCoordinates.logout.test.tsx` (punto 2.5, no forma parte de I11)
 
 ### Composición B — estabilización posterior (03/11/2026)

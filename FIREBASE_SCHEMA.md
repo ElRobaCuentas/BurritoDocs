@@ -473,8 +473,7 @@ puntos. No se conserva como contrato vigente; sirve solo como antecedente.
 
 | Documento | Relación |
 |-----------|----------|
-| `PROJECT_CONTEXT.md` | Propósito, estado y limitaciones generales |
-| `ARCHITECTURE.md` | Flujo de datos, ciclo de tracking y topología |
+| `ARCHITECTURE.md` | Propósito, flujo de datos, ciclo de tracking y topología |
 | `TROUBLESHOOTING.md` | Incidentes de persistencia, paths y tracking |
 | `DECISIONS.md` | ADR-003, ADR-019, ADR-023 a ADR-028 y ADR-030 |
 | `../AdminWeb/README.md` | Panel, auth admin y convenciones de correo |
@@ -486,5 +485,5 @@ puntos. No se conserva como contrato vigente; sirve solo como antecedente.
 
 Firebase Console es la fuente autoritativa de las reglas efectivas. No existe
 un volcado versionado de producción en este repositorio. Un cambio de path o
-de contrato debe sincronizar `PROJECT_CONTEXT.md`, `ARCHITECTURE.md` y los
-READMEs/AGENTS de las apps afectadas.
+de contrato debe sincronizar `ARCHITECTURE.md` y los READMEs/AGENTS de las
+apps afectadas.

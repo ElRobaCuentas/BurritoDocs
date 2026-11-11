@@ -269,7 +269,7 @@ según el mecanismo existente. Ver ADR-030 y CASO 019 de userapp.md.
 | Causa | Los edificios del campus UNMSM causan interferencia GPS (efecto multipath) |
 | Diagnóstico | Comparar coordenadas registradas con la posición real del bus |
 | Solución | No hay mitigación en el tracking actual. Cuando se implemente geofencing, el umbral de 40 metros absorberá este error |
-| Prevención | Limitación conocida documentada en PROJECT_CONTEXT.md |
+| Prevención | Limitación conocida documentada en `ARCHITECTURE.md` §9 |
 
 ### Ubicación congelada (stale location)
 
@@ -362,8 +362,7 @@ actual del proyecto. La planificación futura, cuando corresponde, está en ROAD
 
 | Documento | Relación |
 |-----------|----------|
-| `PROJECT_CONTEXT.md` | Visión general, limitaciones del sistema. |
-| `ARCHITECTURE.md` | Flujo de datos, ciclo de vida del tracking. |
+| `ARCHITECTURE.md` | Visión general, flujo de datos, ciclo de vida y límites. |
 | `FIREBASE_SCHEMA.md` | Estructura de nodos, payloads e índices de la RTDB. |
 | `ROADMAP.md` | Planificación post-MVP, postergaciones y condiciones de pre-release. |
 | `DECISIONS.md` | Decisiones de arquitectura (persistence, serverless, etc.). |

@@ -22,6 +22,12 @@ evidencia histórica, en `BUGS_RESUELTOS/`.
 
 ## 1. Visión General
 
+El Burrito es un sistema de seguimiento en tiempo real para los autobuses
+universitarios de la Universidad Nacional Mayor de San Marcos (UNMSM). Resuelve
+una **asimetría de información**: los estudiantes esperan en paraderos sin saber
+cuándo llegará el próximo bus; la aplicación muestra la posición en vivo de cada
+unidad sobre un mapa accesible desde el celular.
+
 El ecosistema usa un patrón **productor-consumidor para el tracking**: la
 BurritoDriverApp produce posiciones GPS y El Burrito las consume. Esa parte del
 sistema es **unidireccional** y no tiene una API propia ni un backend intermedio
@@ -822,7 +828,6 @@ se presenta aquí como parte de la topología productiva.
 
 | Documento | Relación |
 |-----------|----------|
-| `PROJECT_CONTEXT.md` | Visión general del ecosistema, propósito y estado. |
 | `FIREBASE_SCHEMA.md` | Estructura detallada de nodos, payloads, reglas e índices de RTDB. |
 | `DECISIONS.md` | Decisiones de arquitectura (ADR) con razonamiento técnico. |
 | `ROADMAP.md` | Planificación posterior al MVP y dependencias. |
