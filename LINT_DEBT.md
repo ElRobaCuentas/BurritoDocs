@@ -384,5 +384,4 @@ Notas:
 | `ARCHITECTURE.md` §9 | Limitaciones actuales del sistema. |
 | `../MVP.md` | Alcance, cierre del MVP y regla de postergación. |
 | `ROADMAP.md` | Planificación posterior al piloto y referencia al inventario de deuda técnica. |
-| `GRAPHIFY.md` | Procedimiento de actualización del grafo. |
 | `../User/AGENTS.md` §7 | Enrutado de cambios documentales. |

@@ -16,6 +16,12 @@ Los nodos son independientes. Las relaciones se resuelven por claves
 compartidas (DNI, placa, pushId, uid). Este archivo describe el contrato de
 datos y permisos; no certifica por sí solo las reglas desplegadas.
 
+Al verificar permisos, distinguir tres niveles de evidencia: el contrato que
+usa el código cliente, una captura local de reglas (si existe) y las reglas
+efectivamente desplegadas. Una captura local no prueba los permisos actuales
+del servidor. Sin evidencia del despliegue, indicar `[NO VERIFICABLE]` para
+los permisos efectivos, sin confundirlos con el contrato documentado.
+
 ## 2. Convenciones de Datos
 
 ### Timestamps, fechas y turnos
