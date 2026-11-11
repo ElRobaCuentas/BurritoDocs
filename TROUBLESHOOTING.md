@@ -2,370 +2,374 @@
 
 ## 1. Propósito
 
-Este documento recoge problemas conocidos, sus síntomas, causas y
-soluciones. No es una guía de arquitectura ni un changelog.
+Guía de diagnóstico operativo del MVP. Responde a: **tengo un problema,
+¿qué compruebo y qué hago?**
 
-Responde a la pregunta: **tengo un problema, ¿cómo lo diagnostico y
-cómo lo soluciono?**
+No es un historial de incidencias ni un changelog. El historial vivido está
+en `BUGS_RESUELTOS/`; los contratos, en `ARCHITECTURE.md`,
+`FIREBASE_SCHEMA.md` y `DECISIONS.md`.
 
 ## 2. Cómo usar este documento
 
-No se lee completo. Se consulta.
+No se lee completo. Se consulta por síntoma. Cada caso indica **qué
+comprobar**, **cómo interpretarlo** y **qué hacer**.
 
-Si encuentras un problema, busca primero la categoría correspondiente:
+| Si el problema es… | Empezar en |
+|--------------------|------------|
+| No puedo entrar o crear una cuenta | §5 Acceso y autenticación |
+| No tengo asignación o no puedo iniciar | §4 Asignaciones e inicio |
+| No hay GPS o el servicio se reinicia | §6 Servicio Android / §7 Tracking |
+| Faltan permisos o notificaciones | §6 Foreground service |
+| El bus no aparece, está congelado o desactualizado | §7 Bus y tracking |
+| DETENER no confirma el cierre remoto | §7 Parada local |
+| El panel AdminWeb no carga, no autoriza o falla el foco | §3 Configuración / §5 Acceso / §9 UI |
+| El proyecto no compila o no arranca | §3 Configuración |
+| El mapa no carga o la cámara se sale del campus | §8 Mapbox |
+| La app se queda en splash, va lenta o el tema no se conserva | §9 Renderizado y tema |
+| Quiero saber qué está aceptado o pendiente | §10 Limitaciones y estado |
 
-| Categoría | Cuándo consultar |
-|-----------|-----------------|
-| Configuración y Compilación | El proyecto no compila o no arranca |
-| Firebase y RTDB | La base de datos no responde, consultas fallan |
-| Autenticación | No se puede iniciar sesión en ninguna app |
-| Foreground Service y Android | El tracking no se mantiene vivo en segundo plano |
-| Tracking GPS | Las coordenadas no llegan o son incorrectas |
-| Mapbox | El mapa no carga o se comporta mal |
-| Renderizado y Estado | La interfaz está lenta o no se actualiza |
-| Problemas conocidos | Limitaciones del estado actual del proyecto |
+**Ruta rápida del tracking:** servicio Android → fix GPS → intento de
+publicación → confirmación RTDB → recepción en El Burrito → validación y
+estado visual. Un heartbeat o un pulso no prueban por sí solos un fix GPS
+reciente ni una entrega remota.
 
-Cada caso documenta: **síntoma**, **causa**, **diagnóstico**,
-**solución** y **prevención**.
+## 3. Configuración y compilación
 
-## 3. Configuración y Compilación
+### `google-services.json` faltante
 
-### google-services.json faltante
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | La app Android falla al inicializar Firebase. |
+| Qué comprobar | Que exista `android/app/google-services.json` en `User` o `Driver`. |
+| Cómo interpretar | Afecta a las apps Android; no es la configuración de AdminWeb. |
+| Acción | Colocar el archivo del proyecto Firebase correspondiente. Los README documentan la ubicación. |
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | La app crashea al iniciar con errores de Firebase no inicializado |
-| Causa | El archivo `android/app/google-services.json` no existe |
-| Diagnóstico | Verificar existencia del archivo en la ruta esperada |
-| Solución | Descargar `google-services.json` desde Firebase Console (proyecto `burritounmsm`) y colocarlo en `android/app/` |
-| Prevención | El README de ambas apps documenta la ubicación exacta |
+### JDK incompatible
 
-### Versión de JDK incompatible
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | Gradle falla por la versión de Java. |
+| Qué comprobar | `java --version` y `JAVA_HOME`. |
+| Cómo interpretar | Los wrappers usan Gradle 9.0.0, que requiere una JVM compatible (17–24). |
+| Acción | Instalar un JDK compatible y apuntar `JAVA_HOME`. |
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | Gradle falla con errores relacionados a la versión de JDK |
-| Causa | JDK 8 o 11 instalado en lugar de JDK 17+ |
-| Diagnóstico | Ejecutar `java --version` en la terminal |
-| Solución | Instalar JDK 17 o superior y configurar `JAVA_HOME` |
-| Prevención | El proyecto usa Gradle 9.0, que requiere JDK 17+ |
+### `.env` faltante o incompleto en El Burrito
 
-### .env faltante en UserApp
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | Mapbox en blanco o Google Sign-In no disponible. |
+| Qué comprobar | Que exista `.env` con `MAPBOX_PUBLIC_TOKEN` y `GOOGLE_WEB_CLIENT_ID`. |
+| Cómo interpretar | Son dos variables distintas; corregir una no arregla el otro síntoma. |
+| Acción | Crear/completar `.env` según el README y `env.d.ts`. |
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | Mapbox en blanco (`MAPBOX_PUBLIC_TOKEN`) o Google Sign-In no funciona (`GOOGLE_WEB_CLIENT_ID`) |
-| Causa | El archivo `.env` en la raíz de BurritoUserApp no existe o está incompleto |
-| Diagnóstico | Verificar existencia de `.env` y que contenga ambas variables |
-| Solución | Crear `.env` con `MAPBOX_PUBLIC_TOKEN=<token>` y `GOOGLE_WEB_CLIENT_ID=<id>` |
-| Prevención | README documenta las variables requeridas. `env.d.ts` las tipa |
+### AdminWeb: «Configuración de Firebase incompleta»
 
-### AdminWeb no arranca: "Configuración de Firebase incompleta"
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | AdminWeb no monta y la consola nombra variables `VITE_FIREBASE_*` faltantes. |
+| Qué comprobar | `.env` contra `.env.example`; que el deploy se haya construido con esas variables. |
+| Cómo interpretar | La validación es de configuración cliente, no de secretos. Un build sin variables reproduce el fallo aunque el código sea correcto. |
+| Acción | Completar las variables y reconstruir. No versionar `.env`. |
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | Al abrir AdminWeb, la app no monta y la consola del navegador muestra `Configuración de Firebase incompleta. Faltan las variables: ...` |
-| Causa | Falta una o más variables `VITE_FIREBASE_*` en el archivo `.env` (o el deploy se compiló sin ellas) |
-| Diagnóstico | `shared/config/env.ts` valida las cinco variables al iniciar y nombra las faltantes. Revisar `.env` contra `.env.example` |
-| Solución | Completar las variables faltantes en `.env` (ver `.env.example`) y reconstruir (`npm run build`) |
-| Prevención | No versionar `.env` (gitignored); usar `.env.example` como plantilla. Las variables `VITE_*` son config cliente, no secretos |
+## 4. Firebase, asignaciones e inicio
 
-## 4. Firebase y RTDB
+### «No tienes un bus asignado para hoy»
 
-### Permisos I03/I04: lecturas y feedback denegados
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | El conductor inicia sesión, pero INICIAR informa que no hay asignación. |
+| Qué comprobar | En `/asignaciones`, que exista una entrada con `choferId` igual al DNI autenticado, `fecha` igual a la fecha `America/Lima` actual y `activo: true`; que `busId` sea válido. |
+| Cómo interpretar | La consulta filtra por conductor y fecha al resolver. Una fecha de ayer/mañana, una asignación inactiva, un `busId` vacío o datos inválidos bloquean el inicio. Los turnos son informativos: no arrancan ni detienen el tracking. |
+| Acción | Crear o corregir la asignación en AdminWeb con la fecha y el conductor correctos. |
 
-El 03/11/2026 el usuario confirmó publicación y operación real con las
-reglas I03/I04, tras laboratorio 72/72 y B2 funcional. Un estudiante ya no
-puede leer `/choferes` ni `/asignaciones`; el conductor lee su perfil
-individual y consulta asignaciones con `orderByChild('choferId').equalTo(dni)`.
-AdminWeb conserva acceso admin. Feedback solo permite crear hijos nuevos
-con Auth UID propio y rating entero 1–5; modificar/borrar se deniega.
-Ante `PERMISSION_DENIED`, contrastar sesión, consulta y contrato antes de
-ampliar permisos. Tabla y alcance de evidencia en FIREBASE_SCHEMA.md §9;
-no hay un volcado versionado de reglas ni una nueva inspección live en
-esta fase. I09 (escritura GPS por asignación) continúa postergada.
+### La consulta de asignación falla o devuelve vacío
 
-### I06-B: fecha excesivamente futura / ubicación que no avanza
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | DriverApp informa error al consultar `/asignaciones`, o la consulta devuelve vacío sin motivo visible. |
+| Qué comprobar | Sesión del conductor, datos del nodo y reglas RTDB. En las reglas, si existe el índice; en la consola de la app, si aparece una advertencia por índice. |
+| Cómo interpretar | La falta de `.indexOn: "choferId"` afecta al **rendimiento** y puede generar una advertencia; **no deniega por sí sola** ni explica automáticamente un resultado vacío. La autorización depende de las reglas y de que la consulta cumpla el contrato. Un resultado vacío también puede deberse a datos ausentes o a la fecha resuelta. |
+| Acción | Corregir primero reglas, sesión o datos. Agregar el índice solo si la advertencia o el rendimiento lo justifican. Ver índices y reglas en `FIREBASE_SCHEMA.md`. |
 
-Desde la corrección local del 03/11, `MapService` descarta timestamps
-explícitos mayores que hora local de recepción + 300 000 ms. Revisar
-relojes del emisor/receptor; no confundir timestamp publicado con edad del
-fix GPS. No sustituir fechas inválidas por «ahora». Se conserva I06-A
-(campos ausentes/null usan respaldos) como limitación aceptada.
-La última posición válida no se renueva por un dato rechazado y caduca
-según el mecanismo existente. Ver ADR-030 y CASO 019 de userapp.md.
+### `PERMISSION_DENIED` en lecturas o feedback
 
-### Missing index en /asignaciones
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | Una lectura permitida falla con `PERMISSION_DENIED`, o el feedback no se puede crear, editar ni borrar. |
+| Qué comprobar | Sesión y UID; path y operación exactos; que la consulta cumpla la regla; en feedback, que se cree un hijo nuevo con UID propio y rating entero 1–5. |
+| Cómo interpretar | La regla distingue lectura, creación, edición y borrado. Un estudiante no debe leer `/choferes` ni `/asignaciones` completas; el conductor consulta su perfil y sus asignaciones; AdminWeb conserva acceso admin. Editar o borrar feedback ajeno se deniega. |
+| Acción | Contrastar sesión, consulta y contrato antes de ampliar permisos. No usar `PERMISSION_DENIED` como evidencia de un índice faltante. Ver `FIREBASE_SCHEMA.md` §9. |
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | DriverApp muestra error al consultar `/asignaciones` o la consulta devuelve vacío sin motivo |
-| Causa | Falta el índice `.indexOn: "choferId"` en las reglas de Firebase RTDB |
-| Diagnóstico | Ir a Firebase Console → Realtime Database → Rules. Verificar que existe: `"asignaciones": { ".indexOn": "choferId" }` |
-| Solución | Agregar la regla de índice manualmente en Firebase Console |
-| Prevención | FIREBASE_SCHEMA.md documenta el índice requerido |
+### INICIAR sin red rechaza la asignación (I08)
 
-### Persistence causando ráfagas de posición
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | Sin red, INICIAR muestra «No se pudo validar la asignación…» aunque la pantalla ya mostraba la asignación del día. |
+| Qué comprobar | Si la desconexión está confirmada por `.info/connected == false`; si existe una asignación válida del mismo conductor y día en memoria; y si la consulta falló por timeout aislado. |
+| Cómo interpretar | El respaldo solo se habilita con desconexión confirmada, no con cualquier timeout. Vive en memoria: no sobrevive al proceso ni detecta altas, cancelaciones o cambios administrativos hechos offline. |
+| Acción | Recuperar la conexión y reintentar. Si hay PARADA LOCAL NO CONFIRMADA, resolverla antes de volver a INICIAR. Ver ADR-028 y CASO 021 de `BUGS_RESUELTOS/driverapp.md`. |
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | El bus aparece "viajando en el tiempo" en el mapa al recuperar conexión |
-| Causa | Firebase persistence habilitada: acumula ubicaciones durante pérdida de señal y las reenvía en ráfaga al reconectar |
-| Diagnóstico | Verificar en `index.js` de DriverApp que `setPersistenceEnabled(true)` está comentado |
-| Solución | No reactivar persistence. El código actual ya la tiene desactivada (valor por defecto de Firebase) |
-| Prevención | DECISIONS.md documenta la decisión. `index.js` tiene un comentario explicativo |
+### Hay más de una asignación para el conductor y la fecha
 
-### ServerValue.TIMESTAMP vs Date.now()
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | El inicio bloquea por asignaciones contradictorias. |
+| Qué comprobar | Si existen dos o más entradas activas del mismo `choferId` para la misma `fecha`, o si alguna contradice explícitamente el conductor consultado. |
+| Cómo interpretar | La validación de exclusividad es previa, no atómica: dos altas concurrentes podrían duplicar. No valida que el bus esté libre; varios conductores pueden compartir bus. |
+| Acción | Cancelar o corregir duplicados en AdminWeb. Un turno relevo no debe crear otra asignación. |
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | Timestamps inconsistentes entre nodos de Firebase |
-| Causa | DriverApp usa `Date.now()` (reloj del dispositivo), UserApp usa `database.ServerValue.TIMESTAMP` (reloj del servidor) en `/usuarios` y `/comentarios` |
-| Diagnóstico | Comparar timestamps entre `/ubicacion_buses` y `/usuarios/ultimaConexion` |
-| Solución | No requiere acción inmediata. Ambos métodos coexisten porque los paths son distintos. Al unificar tracking, debe elegirse uno |
-| Prevención | FIREBASE_SCHEMA.md documenta qué método usa cada nodo |
+## 5. Acceso y autenticación
 
-### Inicio offline rechazado pese a tener asignación del día (I08)
+### AdminWeb: «No autorizado» o «No se pudo verificar»
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | Sin red, INICIAR muestra "No se pudo validar la asignación…" aunque la pantalla ya había cargado la asignación del día; con red el mismo flujo funciona |
-| Causa | El chequeo usaba `database().ref('/.info/connected')`. El SDK instalado solo admite la ruta especial **sin** barra inicial; la llamada lanzaba excepción, el `catch` la absorbía y `offline` quedaba en `false` |
-| Diagnóstico | Repetir con Wi-Fi y datos apagados y observar que la consulta falla por timeout pero el respaldo no se habilita. En el código, buscar la referencia `.info`; el error no aparece en Logcat porque se captura |
-| Solución | Corregido en I08: `database().ref('.info/connected')`. Con desconexión confirmada, INICIAR puede usar el respaldo en memoria del mismo conductor/día. Los tests rechazan la variante con barra inicial; no confundir un timeout aislado con desconexión |
-| Prevención | Tratar `.info/connected` y `.info/serverTimeOffset` como rutas especiales sin `/`. Ver ADR-028 y BUGS_RESUELTOS/driverapp.md (CASO 021) |
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | Un usuario autenticado no entra al panel, o el panel queda comprobando el rol. |
+| Qué comprobar | Si el mensaje es **«No autorizado»** o **«No se pudo verificar»**. En Firebase Auth, que la sesión corresponda al UID esperado. En RTDB, si existe `/administradores/{uid}`. |
+| Cómo interpretar | `PERMISSION_DENIED` al leer el nodo se trata como **denegado**: la cuenta no es admin o la regla no permite esa lectura. Un timeout de 10 s o un fallo de red se tratan como **estado desconocido**, no como denegación. |
+| Acción | Denegado: crear o corregir el administrador y volver a iniciar sesión. Error: revisar conexión y usar **Reintentar**. Nunca conceder acceso por defecto ni convertir un fallo de red en denegación. Ver `admin_check.ts` y `App.tsx`. |
 
-## 5. Autenticación
+El flujo vive en AdminWeb. La reproducción original en DriverApp es
+histórica y no describe el flujo actual de esa app (`BUGS_RESUELTOS/`,
+CASO 014).
 
-### Auth gate cuelga offline (spinner infinito sin CERRAR SESIÓN)
+### Login de conductor: `auth/user-not-found`
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | Con sesión guardada y sin red (modo avión), el auth gate de **AdminWeb** queda en spinner infinito. No hay CERRAR SESIÓN; el panel nunca se monta. (Originalmente diagnosticado en la DriverApp, antes de ADR-025) |
-| Causa | `existeAdministrador()` (`admin_check.ts`) usa `get()` del SDK JS de Firebase; sin red, la promesa **cuelga indefinidamente — ni resuelve ni rechaza**; el estado de verificación queda `true` para siempre |
-| Diagnóstico | Captura CDP del JS: log START de `existeAdministrador` aparece y el DONE jamás. `adb logcat` no muestra error (no es un throw, es una promesa que nunca termina) |
-| Solución | Acotar la llamada con timeout (`get()` con `withTimeout`, 10 s) y ofrecer REINTENTAR + CERRAR SESIÓN ante fallo. **Resuelto por C4.AUTH** (ver `docs/BUGS_RESUELTOS/driverapp.md` CASO 014); hoy vigente en el auth gate de **AdminWeb** (`App.tsx` + `admin_check.ts`) |
-| Prevención | Todo read `once()` de rnfirebase sin persistence (ADR-003) cuelga offline. No dejarlo sin límite de tiempo |
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | El conductor no inicia sesión; Auth devuelve `auth/user-not-found`. |
+| Qué comprobar | Que el DNI sea el correcto y que exista la cuenta `${dni}@conductor.com` en Firebase Authentication. |
+| Cómo interpretar | La cuenta no existe o el identificador introducido no coincide. No confundir con contraseña incorrecta ni con un fallo de red. |
+| Acción | Crear o corregir el conductor desde AdminWeb. La contraseña inicial es el DNI; cambiarla antes de producción real. |
 
-### Login de conductor falla con "user-not-found"
+### Error al crear un conductor
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | El conductor no puede iniciar sesión, Firebase Auth devuelve `auth/user-not-found` |
-| Causa | La cuenta `${dni}@conductor.com` no existe en Firebase Auth. El administrador no creó el conductor desde el panel, o se ingresó un DNI incorrecto |
-| Diagnóstico | Verificar en Firebase Console → Authentication que el email existe |
-| Solución | Crear el conductor desde el Panel de Gestión en **AdminWeb** (ChoferesScreen). El servicio `admin_service.ts` crea Auth + RTDB simultáneamente |
-| Prevención | El flujo admin siempre crea Auth con email `${dni}@conductor.com` y contraseña inicial = DNI. Riesgo aceptado del MVP: reemplazar estas contraseñas antes de producción real |
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | AdminWeb muestra «Error de autenticación» al crear un conductor. |
+| Qué comprobar | Si la cuenta de Auth llegó a crearse; si existe `/choferes/{dni}` y el índice correspondiente; y el error concreto de Auth o RTDB en la consola. |
+| Cómo interpretar | Auth y RTDB **no se crean de forma atómica**: primero se crea la cuenta y después se escriben los nodos. Un fallo posterior de RTDB puede mostrarse con el mismo mensaje genérico. La app temporal de Auth debe usar `inMemoryPersistence`; AdminWeb no depende de `google-services.json`. |
+| Acción | Si Auth existe pero falta RTDB, corregir o reintentar la creación sin duplicar la cuenta. Si falla la app temporal, revisar la inicialización y la configuración web de Firebase. Ver ADR-011/ADR-025 y `admin_service.ts`. |
 
-### Error al crear conductor desde el panel admin
+### Google Sign-In no completa el acceso
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | Al crear un conductor aparece "Error de autenticación" |
-| Causa | La app temporal de Firebase Auth (`initializeApp(config, 'reg_...')` con `inMemoryPersistence`) no se inicializa correctamente |
-| Diagnóstico | Revisar logs de Firebase en consola para errores de inicialización |
-| Solución | El código ya maneja la inicialización con try/catch. Si persiste, verificar que `google-services.json` (o la config web) esté presente |
-| Prevención | `admin_service.ts` usa una app temporal por operación con `inMemoryPersistence` (ADR-011 / ADR-025), no una instancia `SecondaryApp` persistente |
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | «Continuar con Google» no hace nada, se cancela o Firebase rechaza la credencial. |
+| Qué comprobar | Que `.env` tenga `GOOGLE_WEB_CLIENT_ID`; que el cliente sea de **tipo web**; que el SHA-1 de la build instalada esté registrado en Firebase; y que se haya obtenido un ID token antes de llamar a Firebase Auth. |
+| Cómo interpretar | Son causas posibles, no una causa única. Un cliente ausente o incorrecto, un SHA-1 no registrado —incluido el de release—, la selección/cancelación de cuenta y el fallo al obtener el token producen síntomas distintos. No atribuirlo automáticamente a `.env`. |
+| Acción | Corregir el cliente OAuth web y registrar el SHA-1 correspondiente; repetir con una build del mismo keystore. Ver CASO 007 de `BUGS_RESUELTOS/userapp.md`. |
 
-### Google Sign-In no funciona en UserApp
+### El auth gate queda comprobando sin red
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | Al presionar "Continuar con Google" no sucede nada o muestra error |
-| Causa | `GOOGLE_WEB_CLIENT_ID` no configurado en `.env` o el valor es incorrecto |
-| Diagnóstico | Verificar que `.env` existe y contiene `GOOGLE_WEB_CLIENT_ID` |
-| Solución | Agregar o corregir el `webClientId` en `.env`. El valor se obtiene de Firebase Console → Project Settings → General → Web apps |
-| Prevención | README de UserApp documenta las variables de entorno |
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | Con sesión guardada y sin red, AdminWeb se queda comprobando el rol; no aparece «No autorizado» ni el contenido. |
+| Qué comprobar | Si AdminWeb alcanza su timeout de 10 s y muestra el estado recuperable; en los logs de red/consola, si la lectura queda pendiente. |
+| Cómo interpretar | Una lectura remota sin red puede tardar o quedar pendiente según el SDK y la caché. El código actual acota la espera; al vencer pasa a **error recuperable**, no a denegación. |
+| Acción | Restablecer la conexión y usar **Reintentar** o **Cerrar sesión**. No dejar lecturas de rol sin timeout. |
 
-### AdminWeb muestra "No autorizado" al iniciar sesión siendo administrador
+## 6. Foreground service y Android
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | Al entrar como administrador, el panel muestra brevemente "No autorizado" antes de cargar |
-| Causa | El auth gate trataba el estado pendiente (`isAdmin === null`, mientras se comprobaba el rol) como denegación |
-| Diagnóstico | Ocurría en cada login de admin, incluso con `/administradores/{uid}` existente |
-| Solución | **Resuelto**: `App.tsx` usa un estado explícito de rol (`checking` → `admin` / `denied` / `error`). Mientras está en `checking` no muestra "No autorizado". `PERMISSION_DENIED` en `/administradores/{uid}` se interpreta como `denied`; timeout/red van a `error` recuperable |
-| Prevención | No derivar la pantalla de denegación de un estado todavía pendiente; distinguir siempre "comprobando" de "denegado" |
+### El servicio se reinicia cada ~40 s
 
-### Diferenciar "No autorizado" de "No se pudo verificar" (AdminWeb)
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | El panel muestra ciclos de «Motor sin pulsos» → «Servicio Android reiniciado» sin intervención del conductor. |
+| Qué comprobar | Si existió alguna vez un fix; `dumpsys location` y visibilidad de satélites; si los pulsos llegan al proceso; si el servicio nativo sigue vivo. |
+| Cómo interpretar | El watchdog reinicia tras 30 s sin pulso. En interiores o sin satélites puede no haber fix; tras un fix previo, en cambio, el heartbeat puede seguir emitiendo con la última posición. Un bucle persistente con GPS exterior y pulsos presentes apunta a un fallo real de tracking. |
+| Acción | Probar al aire libre y esperar el primer fix. Si persiste con GPS válido, revisar el estado del servicio y el wrapper 4.1.0. Ver `ARCHITECTURE.md` §8.3 y CASO 020. |
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | Un usuario autenticado no entra al panel |
-| Causa | Dos causas distintas: (a) la cuenta no está en `/administradores/{uid}`; (b) fallo de red/timeout al leer ese nodo |
-| Diagnóstico | "No autorizado" = la regla RTDB devolvió `PERMISSION_DENIED` (la cuenta no es admin). "No se pudo verificar" = timeout (10 s) o error de red: el estado del rol es desconocido |
-| Solución | Si es "No autorizado": agregar el `uid` en `/administradores/{uid}` (o crear el admin desde el panel) o cerrar sesión. Si es "No se pudo verificar": revisar la conexión y pulsar Reintentar. **Nunca** se concede acceso por defecto |
-| Prevención | No convertir errores de red en denegaciones definitivas ni viceversa (`admin_check.ts`) |
+### Excepción al iniciar el foreground service (Android 14+)
 
-## 6. Foreground Service y Android
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | La DriverApp falla al iniciar tracking; Logcat muestra una excepción de foreground service. |
+| Qué comprobar | Tipo declarado en `AndroidManifest.xml` (`location`); permiso `FOREGROUND_SERVICE_LOCATION`; `foregroundServiceType: ['location']` en las opciones JS; permiso de ubicación en runtime; si el inicio se intenta desde background sin una excepción permitida. |
+| Cómo interpretar | No todas las causas producen `InvalidForegroundServiceTypeException`: un tipo ausente, un permiso faltante o una restricción de inicio pueden producir excepciones distintas (`MissingForegroundServiceTypeException`, `SecurityException`, etc.). El checklist de tres lugares sigue siendo necesario, pero no explica por sí solo toda excepción. |
+| Acción | Corregir la causa concreta que indique Logcat y mantener sincronizados manifest, permisos y opciones JS. Ver `ARCHITECTURE.md` y `Driver/README.md`. |
 
-### DETENER offline, reinicio indebido o confirmación de una operación anterior (I07)
+### La ubicación se detiene con la pantalla apagada
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | Antes de I07, DETENER offline podía dejar el cierre esperando Firebase, permitir reinicio del watchdog y mostrar Detenido con servicio activo al llegar la confirmación antigua |
-| Causa | Cierre local acoplado al ACK remoto, sin invalidación compartida de intención/generación ni aislamiento suficiente de operaciones antiguas |
-| Diagnóstico | Distinguir PARADA LOCAL COMPLETADA de PARADA REMOTA PENDIENTE/CONFIRMADA/FALLIDA; contrastar UI con servicio y registro GPS nativos. Un ACK antiguo o timestamp de heartbeat nuevo no demuestra nueva adquisición GPS ni dos motores simultáneos |
-| Solución | Corregido funcionalmente, validado e integrado/publicado por I07 (`Driver/main`: `9faaaf9`; documentación: `d5c4d48`). DETENER invalida y limpia recursos propios, espera stop nativo serializado y solicita false antes de liberar INICIAR, sin esperar ACK. Una respuesta anterior solo informa diagnóstico. Si aparece PARADA LOCAL NO CONFIRMADA, no es éxito: INICIAR queda bloqueado y se reintenta DETENER |
-| Prevención | Conservar guardas de vigencia, limpieza idempotente y sincronización de remontaje por PRO_TRACKING_STATE. Sin persistencia en disco todavía puede haber pendientes SDK en memoria; no asumir descarte offline ni cierre HeadlessJS por una promesa JS pendiente. Evidencia y residual del wrapper 4.1.0: BUGS_RESUELTOS/driverapp.md (CASO 020) |
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | El marcador se congela al apagar la pantalla o minimizar la app. |
+| Qué comprobar | Que el foreground service esté activo; que exista la notificación del servicio; si `POST_NOTIFICATIONS` está concedido; si el fabricante aplica restricciones adicionales de batería. |
+| Cómo interpretar | Android no exige `POST_NOTIFICATIONS` para iniciar un FGS, pero **esta app bloquea INICIAR cuando se deniega**. Sin notificación visible, el servicio puede seguir existiendo y aparecer en el Task Manager. Si el servicio no está activo, la causa es anterior a la notificación. |
+| Acción | Conceder el permiso desde el flujo de la app. El código ofrece un botón que abre Ajustes; no lo abre automáticamente. Revisar también las restricciones de batería del fabricante. |
 
-### InvalidForegroundServiceTypeException (Android 14+)
+### La notificación del servicio no aparece
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | La DriverApp crashea al iniciar el tracking en Android 14 (API 34) o superior. Logcat muestra `InvalidForegroundServiceTypeException` |
-| Causa | `foregroundServiceType` no está declarado en uno de los tres lugares requeridos por Android 14 |
-| Diagnóstico | Revisar Logcat en Android Studio: `adb logcat \| grep -i foreground` |
-| Solución | Verificar los tres lugares: (1) `AndroidManifest.xml`: `android:foregroundServiceType="location"`, (2) Permisos: `FOREGROUND_SERVICE_LOCATION`, (3) Opciones JS: `foregroundServiceType: ['location' as const]` en `getBackgroundOptions()` |
-| Prevención | ARCHITECTURE.md documenta este requisito. Los tres lugares deben mantenerse sincronizados |
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | El conductor no ve «Transmitiendo ubicación». |
+| Qué comprobar | Ajustes → Apps → BurritoDriverApp → Notificaciones; si el servicio está corriendo; si el permiso fue denegado. |
+| Cómo interpretar | La notificación puede estar oculta por permiso denegado o por el canal, sin que ello demuestre que el servicio no existe. La denegación, en esta app, impide iniciar el tracking. |
+| Acción | Activar notificaciones y volver a iniciar. Si el servicio no está activo, diagnosticar primero el inicio y los permisos de ubicación. |
 
-### GPS se detiene al apagar la pantalla (Doze Mode)
+## 7. GPS, tracking y parada
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | El marcador del bus se congela después de apagar la pantalla o minimizar la app |
-| Causa | Android suspende `watchPosition` porque la app pasó a segundo plano sin foreground service |
-| Diagnóstico | Verificar que la notificación persistente "Transmitiendo ubicación" esté visible en la barra de estado |
-| Solución | Asegurar que `BackgroundJob.start()` se ejecutó correctamente. Si la notificación no aparece, el permiso `POST_NOTIFICATIONS` puede estar denegado |
-| Prevención | El código solicita `POST_NOTIFICATIONS` al iniciar tracking. Si se denegó, abre Settings para que el usuario lo active manualmente |
+### No llegan coordenadas nuevas
 
-### El servicio se reinicia solo cada ~40 segundos
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | El servicio figura activo, pero no aparecen nuevas coordenadas en RTDB. |
+| Qué comprobar | GPS del dispositivo encendido; permisos `ACCESS_FINE_LOCATION` y `ACCESS_BACKGROUND_LOCATION`; primer fix disponible; errores del `locationTask` en Logcat; escrituras a `/ubicacion_buses/{busId}`. |
+| Cómo interpretar | Son etapas distintas: **no hay fix**, **hay fix pero falla la publicación** o **la publicación llega pero la UserApp la descarta**. Sin primer fix no hay heartbeat; después del primer fix, el heartbeat puede publicar la última posición aunque el GPS no entregue una nueva. |
+| Acción | Activar GPS y conceder permisos. Si FINE o BACKGROUND se deniegan, el código aborta el inicio y lo registra; no promete un `Alert` en todos los casos. Ver §6 para servicio y permisos. |
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | En el panel de diagnóstico aparecen ciclos repetidos de "⚠️ Motor sin pulsos" → "🔄 SERVICIO REINICIADO" cada ~40s, sin que el conductor toque nada |
-| Causa | No hay fix de GPS (interiores, sin satélites, permiso denegado). Sin posición no hay pulso, y el watchdog de C3 (timeout 30s) reinicia el servicio en bucle |
-| Diagnóstico | `adb shell "dumpsys location \| grep -A6 'gps provider'"`: si `last location=null` y 0 satélites en fix, el hardware no ve satélites |
-| Solución | Es el comportamiento esperado de C3. Acercar el teléfono a una ventana o salir al exterior: al llegar el primer fix, los pulsos fluyen y el bucle cesa. Si el bucle persiste con GPS visible, hay un problema real de tracking |
-| Prevención | El watchdog solo reinicia; no puede crear satélites. Evaluar en C4 si conviene avisar al conductor tras N reinicios fallidos |
+### Coordenadas imprecisas o saltos de ±10–15 m
 
-### Notificación del foreground service no aparece
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | El bus salta alrededor de su posición real sin un desplazamiento real. |
+| Qué comprobar | Precisión reportada, entorno (interiores/edificios), y si el salto coincide con el fix o con la recepción. |
+| Cómo interpretar | El efecto multipath es una explicación posible en el campus, no una causa demostrada por el síntoma. El umbral futuro de geofencing no garantiza absorberlo: sigue siendo calibración pendiente. |
+| Acción | Comparar con una posición conocida y validar al aire libre. No prometer mitigación actual. Ver ADR-013/ADR-020. |
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | El conductor no ve la notificación "Transmitiendo ubicación" |
-| Causa | Permiso `POST_NOTIFICATIONS` denegado (Android 13+) |
-| Diagnóstico | Ir a Settings → Apps → BurritoDriverApp → Notificaciones |
-| Solución | El código ya abre Settings automáticamente si el permiso fue denegado. El usuario debe activarlo manualmente |
-| Prevención | `SendCoordinates.tsx` maneja este caso con `Linking.openSettings()` |
+### Tracking que no llega a RTDB
 
-## 7. Tracking GPS
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | Hay fix GPS, pero no se actualiza `/ubicacion_buses/{busId}`. |
+| Qué comprobar | `busId` no vacío; sesión y permisos RTDB de escritura; errores de `writeLocation`; conectividad; que no se esté escribiendo en `/ubicacion_buses/null`. |
+| Cómo interpretar | Un error de permisos, una escritura a un bus inexistente o un fallo de red impiden la publicación. Que el servicio esté activo no confirma la escritura. |
+| Acción | Corregir la asignación/busId y las reglas de escritura. Revisar el error concreto de RTDB; no ampliar permisos sin contrastar el contrato. |
 
-### watchPosition no dispara callbacks
+### El bus no aparece en El Burrito
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | No aparecen nuevas coordenadas en RTDB a pesar de que el foreground service está activo |
-| Causa | GPS desactivado en el dispositivo, permiso `ACCESS_FINE_LOCATION` denegado, o el hardware no tiene señal |
-| Diagnóstico | Verificar que el GPS del dispositivo está encendido. Verificar permisos en Settings |
-| Solución | Activar GPS. Si el permiso fue denegado, el código aborta el inicio con un alert |
-| Prevención | `SendCoordinates.tsx` solicita todos los permisos antes de iniciar el service |
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | La UserApp no muestra el bus. |
+| Qué comprobar | Que exista `/ubicacion_buses/{busId}` con `isActive: true`; el `timestamp`; si el bus está dentro de los límites del campus; si la app recibió el snapshot y lo descartó. |
+| Cómo interpretar | La UserApp oculta el bus si `isActive` es `false`, si supera el umbral de antigüedad de 30 s o si el dato no es utilizable. La selección del bus y la caducidad son pasos distintos de la publicación. |
+| Acción | Verificar primero la publicación en RTDB; después, la recepción y la caducidad en la UserApp. |
 
-### Coordenadas imprecisas por efecto multipath
+### El bus está congelado o «viaja en el tiempo»
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | La ubicación del bus salta ±10–15 metros en el mapa sin motivo aparente |
-| Causa | Los edificios del campus UNMSM causan interferencia GPS (efecto multipath) |
-| Diagnóstico | Comparar coordenadas registradas con la posición real del bus |
-| Solución | No hay mitigación en el tracking actual. Cuando se implemente geofencing, el umbral de 40 metros absorberá este error |
-| Prevención | Limitación conocida documentada en `ARCHITECTURE.md` §9 |
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | La posición no avanza, o al reconectar aparecen posiciones antiguas en rápida sucesión. |
+| Qué comprobar | `timestamp` de la última publicación; si el conductor sigue publicando; si `index.js` mantiene desactivada la persistencia en disco; si las escrituras pendientes del SDK se entregan al reconectar; si el timestamp recibido es futuro. |
+| Cómo interpretar | Sin persistencia en disco, el SDK **todavía puede conservar escrituras pendientes en memoria** y entregarlas al reconectar. No asumir que todo intento offline se descarta. Un heartbeat reciente tampoco demuestra un fix nuevo. La deduplicación y la tolerancia a timestamps futuros se aplican en la recepción. |
+| Acción | No reactivar persistencia en disco. Revisar relojes y orden de los datos; si el bus no avanza, comprobar GPS y publicación. Ver ADR-003, ADR-030 y CASO 019. |
 
-### Ubicación congelada (stale location)
+### I06-B: timestamp futuro rechazado
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | El bus aparece en el mapa en una posición que no se actualiza |
-| Causa | La DriverApp perdió conexión de red, o el conductor cerró la app sin presionar "DETENER" |
-| Diagnóstico | Verificar el timestamp de la última actualización en Firebase RTDB para `/ubicacion_buses/{busId}` |
-| Solución | La UserApp clasifica el bus como `offline` si el timestamp supera 30s (`BUS_STALE_AFTER_MS`, C4.6) o si `isActive === false` en RTDB, y no lo muestra. Con timestamp reciente y datos utilizables, la decisión EN MOVIMIENTO/EN PARADERO usa la estrategia C experimental (C4.6): distancia + Δt + speed condicional + memoria de estado (2 parejas consecutivas sin evidencia → PARADERO), con parámetros de CALIBRACIÓN PENDIENTE. El desplazamiento mínimo de 8 m (`MOVEMENT_THRESHOLD_M`, estrategia A) ya NO decide el estado en vivo: se conserva únicamente para comparación offline A vs C. En el primer snapshot usa fallback de edad (12s) |
-| Prevención | El heartbeat del Driver (T4.1, ADR-019) ya elimina las pausas del GPS con bus quieto. La antigua referencia a un timeout check automático en «Fase 4» no corresponde a una tarea vigente de ROADMAP.md; C4.6 oculta datos caducados, pero no garantiza cierre remoto automático (ADR-026) |
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | Una publicación reciente no reemplaza la última posición válida; el bus queda retrasado o caduca. |
+| Qué comprobar | Diferencia entre el timestamp publicado y la hora de recepción; si supera los 300 000 ms; reloj del emisor y del receptor. |
+| Cómo interpretar | La recepción descarta adelantos mayores a cinco minutos; el límite exacto se acepta. No sustituye fechas inválidas por «ahora» ni garantiza sincronización de relojes. La última posición válida caduca por el mecanismo existente. |
+| Acción | Corregir el reloj del dispositivo emisor y volver a publicar. Ver ADR-030 y CASO 019 de `BUGS_RESUELTOS/userapp.md`. |
+
+### Timestamps inconsistentes entre nodos
+
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | Los timestamps de tracking, perfiles o feedback no son comparables. |
+| Qué comprobar | Qué método usa cada nodo: tracking y creación de registros con `Date.now()`; perfiles y feedback con `ServerValue.TIMESTAMP`. |
+| Cómo interpretar | Ambos métodos coexisten porque los paths y propósitos son distintos. No son intercambiables sin definir el contrato del nodo. |
+| Acción | No unificar por suposición. Consultar la representación de cada nodo en `FIREBASE_SCHEMA.md`. |
+
+### Parada local sin confirmación remota
+
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | Al pulsar DETENER, la UI puede quedar en **PARADA LOCAL NO CONFIRMADA** o mostrar que una operación anterior llegó tarde. |
+| Qué comprobar | Si la parada local terminó; si el servicio nativo se detuvo; si la UI distingue parada local de parada remota; si INICIAR sigue bloqueado; si el ACK es de la operación vigente. |
+| Cómo interpretar | I07 desacopla el cierre local del ACK remoto: DETENER invalida recursos, espera el stop nativo y solicita `isActive: false` antes de liberar INICIAR. Una respuesta antigua solo informa diagnóstico. Un ACK o un heartbeat nuevo no prueban adquisición GPS reciente ni dos motores simultáneos. Sin persistencia en disco aún puede haber pendientes en memoria; no asumir cierre remoto garantizado. |
+| Acción | Si aparece PARADA LOCAL NO CONFIRMADA, reintentar DETENER; no iniciar otro recorrido hasta resolverla. Evidencia y residual del wrapper: CASO 020 de `BUGS_RESUELTOS/driverapp.md`. |
 
 ## 8. Mapbox
 
-### Mapa en blanco (no carga)
+### El mapa no carga
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | El mapa no carga, se ve gris o blanco |
-| Causa | Token de Mapbox inválido, vencido o no configurado en `.env` |
-| Diagnóstico | Verificar que `MAPBOX_PUBLIC_TOKEN` existe en `.env` y es un token válido |
-| Solución | Configurar un token público de Mapbox válido. El token se asigna en `Map.tsx` mediante `Mapbox.setAccessToken(MAPBOX_PUBLIC_TOKEN)` |
-| Prevención | README de UserApp documenta la variable de entorno requerida |
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | El mapa se ve gris o blanco. |
+| Qué comprobar | `MAPBOX_PUBLIC_TOKEN` presente y válido; que `Mapbox.setAccessToken(...)` se ejecute; errores de red/estilo en la consola. |
+| Cómo interpretar | Un token inválido o ausente impide cargar el estilo; un token válido no descarta un fallo de red o de inicialización. |
+| Acción | Corregir el token y recargar. Ver el README de UserApp. |
 
-### Bounds no restringen el mapa
+### La cámara se sale del campus
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | El usuario puede desplazarse fuera del campus universitario |
-| Causa | Los bounds (`UNMSM_BOUNDS`) están definidos pero no bloquean el desplazamiento forzado de la cámara |
-| Diagnóstico | Intentar arrastrar el mapa más allá de los límites del campus |
-| Solución | No es un bug. Los bounds actualmente limitan el centro de la cámara pero no restringen el desplazamiento del usuario. Se puede reforzar si es necesario |
-| Prevención | — |
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | El usuario puede desplazar la cámara fuera de los límites definidos. |
+| Qué comprobar | Que `Camera.maxBounds` reciba `UNMSM_BOUNDS` y se aplique después de cargar el estilo; si el comportamiento se reproduce en dispositivo. |
+| Cómo interpretar | `maxBounds` limita el paneo y el zoom de la cámara; **no es una restricción del centro** ni un límite de negocio independiente. Que el código configure el prop no certifica por sí solo el comportamiento observado. |
+| Acción | Verificar en dispositivo y ajustar la configuración si el límite no se aplica. Documentar el caso reproducido. |
 
-## 9. Renderizado y Estado
+## 9. Renderizado y tema
 
-### Firebase listeners causan re-renders masivos
+### La app se queda en el splash
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | El mapa tiene baja tasa de FPS, la app se siente lenta |
-| Causa | El listener de Firebase RTDB está conectado directamente a un componente de React, forzando re-renders completos en cada latido del GPS |
-| Diagnóstico | Verificar que el listener pasa por `burritoLocationStore.ts` (Zustand) y no directamente a `Map.tsx` |
-| Solución | Mantener Zustand como buffer entre Firebase y la UI. Es la arquitectura actual del proyecto |
-| Prevención | Regla arquitectónica documentada en ARCHITECTURE.md: el listener nunca muta el DOM directamente |
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | La UserApp queda en el splash y no muestra login ni mapa. |
+| Qué comprobar | Errores de hidratación de `userStore` y `themeStore`; que ambos `_hasHydrated` lleguen a `true`; que el splash se oculte en `onReady`. |
+| Cómo interpretar | El `NavigationContainer` no se renderiza hasta completar ambas hidrataciones. Un fallo de restauración puede dejar el estado incompleto. |
+| Acción | Reiniciar la app y revisar los errores. **Como último recurso**, borrar los datos de la aplicación desde Ajustes; esto elimina todos sus datos locales, no solo el tema. |
 
-### Hydration gating — la app no avanza del splash
+### La interfaz va lenta o el mapa pierde FPS
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | La UserApp se queda en el splash (logo sobre fondo azul) y no muestra el mapa ni el login |
-| Causa | `userStore` o `themeStore` no completaron la hidratación desde AsyncStorage. El `NavigationContainer` no se renderiza hasta que ambos `_hasHydrated` sean `true`, y el splash nativo (`react-native-bootsplash`) solo se oculta en `onReady` del contenedor (ADR-021) |
-| Diagnóstico | Revisar la consola por errores de hidratación o corrupción de AsyncStorage |
-| Solución | Forzar reinicio de la app. Si persiste, borrar los datos de AsyncStorage desde Settings → Apps → BurritoUserApp → Storage → Clear data |
-| Prevención | App.tsx maneja errores de hidratación y setea `_hasHydrated: true` en el callback `onRehydrateStorage`. El splash se oculta vía `BootSplash.hide({ fade: true })` dentro de `onReady` |
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | Baja tasa de FPS o tirones durante el tracking. |
+| Qué comprobar | Si el listener de RTDB pasa por `burritoLocationStore` y no actualiza directamente un componente; cuántos renders provoca cada snapshot; perfilado en dispositivo. |
+| Cómo interpretar | La arquitectura con Zustand existe, pero su presencia no demuestra que el listener sea la causa de los FPS. Hay que medir antes de atribuirlo. |
+| Acción | Instrumentar renders y perfilado; mantener el listener fuera de los componentes. Ver `ARCHITECTURE.md`. |
 
-### Dark mode no persiste al cerrar la app
+### El tema oscuro no se conserva como se espera
 
-| Campo | Descripción |
-|-------|-------------|
-| Síntoma | Al abrir la app, el tema vuelve al valor por defecto del sistema aunque se haya cambiado manualmente en la sesión anterior |
-| Causa | `themeStore` tiene persistencia manual (AsyncStorage), pero el `CustomDrawer` ejecuta `setTheme(systemColorScheme === 'dark')` en cada montaje, sobrescribiendo el valor persistido |
-| Diagnóstico | Revisar `themeStore.ts` y `CustomDrawer.tsx` |
-| Solución | Comportamiento esperado. El toggle manual solo aplica dentro de la sesión actual. El tema del sistema prevalece al reiniciar la app |
-| Prevención | ARCHITECTURE.md documenta este comportamiento |
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | El tema cambia durante el uso, pero al reiniciar parece volver al esquema del sistema. |
+| Qué comprobar | Si el tema guardado se restauró; si `DrawerNavigator` ejecutó `setTheme(systemColorScheme === 'dark')` al montar o al cambiar el esquema; si el toggle se hizo después de esa sincronización. |
+| Cómo interpretar | `themeStore` persiste el valor y llama a `Appearance.setColorScheme`, pero `DrawerNavigator.tsx:141–147` sincroniza el tema con el esquema del sistema. Un toggle manual puede ser sobrescrito; no está definido que el valor manual prevalezca siempre. |
+| Acción | Reproducir con el mismo esquema del sistema y revisar el orden de montaje/hidratación. No asumir que el toggle dura una sesión ni que el sistema siempre prevalece. |
 
-## 10. Problemas conocidos
+### AdminWeb: el foco de un modal queda atrapado o se pierde
 
-Los siguientes items **no son errores**. Son limitaciones del estado
-actual del proyecto. La planificación futura, cuando corresponde, está en ROADMAP.md.
+| Paso | Qué comprobar |
+|------|---------------|
+| Síntoma | Al abrir/cerrar un modal, el foco no vuelve al elemento esperado o queda dentro de un modal cerrado. |
+| Qué comprobar | Si el problema ocurre con teclado, con un modal anidado o solo en un navegador concreto; si el foco se restaura al cerrar. |
+| Cómo interpretar | La corrección del comportamiento de foco está integrada; la comprobación visual en navegador sigue pendiente. No afirmar que el defecto continúa sin reproducirlo en la build actual. |
+| Acción | Documentar navegador y pasos; contrastar con `BUGS_RESUELTOS/adminweb.md`. |
 
-| Problema | Estado |
-|----------|--------|
-| I06-A: campos ausentes/null se normalizan a coordenadas 0 y timestamp actual | Limitación aceptada el 30/10 y ratificada el 03/11; no afirmar rechazo de todo registro incompleto |
-| I06-B: desfase de relojes | Se rechaza adelanto >5 min; dentro del margen sigue pudiendo retrasar datos/caducidad. Corrección local probada, publicación/APK pendientes |
-| Foco de modales AdminWeb | Corrección local en Modal.tsx; verificaciones técnicas aprobadas, comprobación visual en navegador pendiente. Ver BUGS_RESUELTOS/adminweb.md |
-| Regresión posterior al corte 03/11 | User 124/124 (10 suites) tras I06-B; Driver 120/120 versionadas (9 suites) en auditoría previa, sin test protegido. TypeScript aprobado; deuda de lint de UserApp registrada en [LINT_DEBT.md](LINT_DEBT.md), Driver 1 error previo. No es evidencia de jornada completa |
-| La UserApp muestra un solo bus (multi-bus no implementado) | Ver ROADMAP.md (T4.4) |
-| No hay geofencing ni cierre automático de vueltas | Ver ROADMAP.md (T4.3) |
-| iOS no soportado para DriverApp | Limitación de plataforma |
-| Regresión de DriverApp al cierre I07 | Reportada el 01/11/2026: 64/64 tests, cinco suites; el wrapper real requiere el flag transformIgnorePatterns documentado en CASO 020, sin cambiar jest.config.js. Lint global falla por asignacionId unused preexistente en SendCoordinates.tsx:277:12; TSC y ESLint de los cinco tests: exit 0. |
-| Regresión de DriverApp al cierre I08 | Reportada el 01/11/2026: 97/97 tests, seis suites (64 de I07 + 33 de I08). `tsc --noEmit`, ESLint de los tests y `git diff --check`: exit 0. `npm run lint` global conserva el único error preexistente `asignacionId` unused en `SendCoordinates.tsx`; no se corrigió. |
-| Respaldo offline de la asignación | El respaldo vive en memoria (no sobrevive al proceso) y no puede detectar altas, cancelaciones ni cambios administrativos ocurridos durante la desconexión. Solo se habilita con `.info/connected == false`, no con un timeout aislado (ADR-028). |
-| Etiqueta «Servicio de ubicación activo» | Describe el servicio Android local en ejecución; no confirma publicación en RTDB ni distingue conectado/desconectado. Decisión de MVP en I08 (ADR-028). |
-| Exposición histórica de la contraseña de firma de release | La contraseña quedó expuesta en el historial de Git. El keystore de release no se encontró en el historial auditado y no hay evidencia identificada de uso indebido. La configuración de firma actual se conserva. No se ha decidido rotar la clave; la decisión se reevaluará si aparecen evidencias de compromiso o cambian las condiciones de riesgo. |
-| Deriva GPS en interiores | Observada durante las pruebas del 24/08/2026: un bus detenido en interiores puede mostrarse «EN MOVIMIENTO» por deriva del GPS. Aire libre sin problema. No se afirma que siga ocurriendo; ADR-020 sigue experimental y la calibración fina es post-MVP. |
-| Corte de red **durante** la sesión: Firebase no dispara `onError`; en DriverApp la recuperación depende del heartbeat T4.1 (catch-reset) y en UserApp el bus caducado se oculta por expiración de timestamp (estrategia C) | Atenuado por C4.6+T4.1 (22/08); escenario obligatorio del checklist de T1 |
-| Deuda de lint de UserApp | Pendiente post-MVP; sin fallos funcionales confirmados. Inventario, análisis y condiciones de revisión en [LINT_DEBT.md](LINT_DEBT.md) |
+## 10. Limitaciones y estado
+
+Lo siguiente **no son necesariamente errores actuales**. Los riesgos aceptados
+no deben presentarse como resueltos.
+
+| Tema | Estado |
+|------|--------|
+| I06-A: campos ausentes/null | Se conservan los respaldos de coordenadas 0 y timestamp actual; no afirmar que todo registro incompleto se rechaza. Limitación aceptada. |
+| I06-B: timestamps futuros | Rechazo >5 min implementado en código integrado; validación física prolongada y publicación de APK no acreditadas. |
+| I04: reglas de lectura/feedback | Hubo confirmación de publicación y operación el 03/11; no hay volcado versionado de reglas ni inspección live actual. El contrato vigente está en `FIREBASE_SCHEMA.md`. |
+| I07: cierre local/remoto | Implementado e integrado; el residual del wrapper 4.1.0 está en CASO 020. |
+| I08: asignación offline | Consulta y respaldo en memoria implementados; no detecta cambios administrativos offline. |
+| I11: identidad de diagnóstico | `setUserId(uid)`/`setUserId('')` solicitado por la app; la aplicación nativa/recepción de reportes no está acreditada por las pruebas registradas. |
+| Un solo bus visible en UserApp | Límite del MVP; multi-bus está en ROADMAP. |
+| Sin geofencing ni cierre automático de vueltas | Límite del MVP; ver ROADMAP y ADR-020. |
+| Sin cierre remoto garantizado | No hay `onDisconnect`; si el proceso muere, `isActive` puede quedar en `true`. El heartbeat no garantiza cierre. Ver ADR-026. |
+| Respaldo offline de la asignación | En memoria; no sobrevive al proceso ni cubre cambios administrativos offline. Solo se habilita con `.info/connected == false`. |
+| Etiqueta «Servicio de ubicación activo» | Describe el servicio Android local; no confirma publicación en RTDB ni conexión. |
+| iOS no soportado en DriverApp | Limitación de plataforma. |
+| Deriva GPS en interiores | Observada el 24/08/2026; no se afirma que siga ocurriendo. ADR-020 sigue experimental. |
+| Corte de red durante la sesión | Firebase puede no disparar `onError`; la UserApp oculta por caducidad y DriverApp depende del heartbeat/watchdog. |
+| Deuda de lint de UserApp | Post-MVP; ver `LINT_DEBT.md`. |
+| Exposición histórica de la contraseña de firma Android | La contraseña quedó expuesta en el historial de Git. El keystore de release no se encontró en el historial auditado y no hay evidencia identificada de uso indebido. La configuración actual se conserva. **No se ha decidido rotar la clave**; se reevaluará si aparecen evidencias de compromiso o cambian las condiciones de riesgo. `ROADMAP.md` exige rotación antes de Play Store; esta guía no resuelve esa discrepancia ni autoriza una rotación por suposición. |
 
 ## 11. Referencias
 
-| Documento | Relación |
-|-----------|----------|
-| `ARCHITECTURE.md` | Visión general, flujo de datos, ciclo de vida y límites. |
-| `FIREBASE_SCHEMA.md` | Estructura de nodos, payloads e índices de la RTDB. |
-| `ROADMAP.md` | Planificación post-MVP, postergaciones y condiciones de pre-release. |
-| `DECISIONS.md` | Decisiones de arquitectura (persistence, serverless, etc.). |
-| Driver/README.md | Setup y requisitos de DriverApp. |
-| User/README.md | Setup y requisitos de UserApp. |
-| `BUGS_RESUELTOS/` | Historial técnico de bugs resueltos durante el desarrollo. |
+| Documento | Uso |
+|-----------|-----|
+| `ARCHITECTURE.md` | Funcionamiento, flujo de datos y límites del sistema. |
+| `FIREBASE_SCHEMA.md` | Nodos, permisos, consultas e índices de RTDB. |
+| `DECISIONS.md` | Decisiones y riesgos aceptados. |
+| `BUGS_RESUELTOS/` | Historial de incidencias y evidencia. |
+| `MVP.md` / `ROADMAP.md` | Estado del MVP y planificación posterior. |
+| `AGENTS.md` de cada app | Reglas operativas y setup específico. |
