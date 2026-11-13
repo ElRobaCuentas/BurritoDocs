@@ -34,9 +34,9 @@ La propuesta histórica de caducidad a los 60 s no es trabajo pendiente.
 | T4.3 — Geofencing | BurritoDriverApp | Pendiente | T4.2 | Punto Cero Dinámico (ADR-013), máquina de estados con Haversine e histéresis 40/80 m. La validación real depende de la implementación; ajustar radios contra multipath de edificios en campus. |
 | T5.2 — Smoothing | El Burrito | Pendiente | T4.4 | Interpolación (moving average / Kalman ligero). El ajuste fino depende de la implementación y de datos reales del circuito en campus. |
 | T5.1 — Calibración de paraderos | El Burrito | Pendiente | Presencia en Campus UNMSM | Coordenadas GPS reales de los 10 paraderos. Sin otra dependencia funcional documentada. |
-| PULSO — Vigilancia automática | AdminWeb (monitor) | Pendiente | — | Consultas periódicas del Worker sobre RTDB operativa reutilizando el evaluador y el registro de incidentes (ARCHITECTURE §3.2). Hoy las comprobaciones son manuales. |
-| PULSO — Notificaciones de incidentes | AdminWeb (monitor) | Pendiente | PULSO — Vigilancia automática | Avisos al abrir o cerrar incidentes; el canal está por elegir. |
-| PULSO — Integración con Central | AdminWeb | Pendiente | PULSO — Notificaciones | Vista de incidentes y estado de seguimiento; la interfaz de Central no se ha modificado en el MVP. |
+| PULSO — Vigilancia automática | AdminWeb (monitor) | Parcial | — | Comprobación programada local cada minuto (`runScheduledCheck` con `npm run watch:local`; cron solo en `memory-local`) reutilizando evaluador, D1 e incidentes (ARCHITECTURE §3.2). Pendiente el despliegue real en Cloudflare: D1 remota, configuración operativa y ejecución programada. |
+| PULSO — Notificaciones de incidentes | AdminWeb (monitor) | Pospuesta | PULSO — Vigilancia automática | Avisos al abrir o cerrar incidentes; el canal está por elegir. Pospuesta a favor de la integración con Central. |
+| PULSO — Integración con Central | AdminWeb | Pendiente | — | Próxima prioridad de PULSO: vista funcional de incidentes y estado de seguimiento; la interfaz de Central no se ha modificado en el MVP. Ya no depende de las notificaciones, que quedaron pospuestas. |
 
 **Entornos de trabajo:** Bloque A (Casa/Calle) = implementación y pruebas GPS
 locales con un Motorola, BurritoDriverApp en segundo plano y El Burrito en primer

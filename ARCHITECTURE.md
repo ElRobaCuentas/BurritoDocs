@@ -85,7 +85,7 @@ nodo administrativo, del índice de conductores o de las reglas de cada path.
 | El Burrito | Crea feedback | `/comentarios` |
 | AdminWeb | CRUD de configuración y lectura de listas | `/choferes`, `/buses`, `/asignaciones`, `/administradores` |
 | AdminWeb | Inicializa o elimina el nodo de un bus | `/ubicacion_buses/{placa}` |
-| AdminWeb (PULSO) | Lee el tracking por HTTP público para evaluar el seguimiento (consulta manual) | REST `/ubicacion_buses/{busId}.json` |
+| AdminWeb (PULSO) | Lee el tracking por HTTP público para evaluar el seguimiento (comprobación manual o programada en local) | REST `/ubicacion_buses/{busId}.json` |
 
 ### Autenticación y autorización
 
@@ -223,9 +223,21 @@ La estructura de archivos relevante está centralizada en §6.
 
 Worker local de Cloudflare en `AdminWeb/monitor/` que observa el tracking
 publicado en RTDB y comprueba su estado. No escribe en RTDB y no modifica
-aplicaciones. Su acceso es **manual**: `GET /evaluate` solo responde en loopback
-con la cabecera `X-Pulso-Local: 1` y el modo operativo no habilita cron
-(`monitor/worker/src/index.ts`); cada comprobación se ejecuta a mano.
+aplicaciones. Su acceso tiene dos vías (`monitor/worker/src/index.ts`):
+
+- **Manual:** `GET /evaluate` solo responde en loopback con la cabecera
+  `X-Pulso-Local: 1`.
+- **Programada local:** `runScheduledCheck` reutiliza el mismo ciclo del acceso
+  manual (evaluador, D1 e incidentes) y exige memoria D1
+  (`PULSO_MEMORY: 'd1-local'`); rechaza el modo operativo con
+  `operative-manual-only`, que sigue sin habilitar cron. Solo el entorno
+  `memory-local` de `wrangler.jsonc` declara cron (`* * * * *`, un minuto).
+  Wrangler `dev` no ejecuta el reloj por sí solo: en desarrollo se dispara con
+  `npm run watch:local` (`monitor/worker/scripts/watch-local.ts`), que invoca la
+  entrada programada local de Wrangler cada ~60 s y se detiene con Ctrl+C. Un
+  error del handler (D1 o configuración) falla la ejecución con un código
+  sanitizado; no se confunde con un incidente de fuente, que se guarda con
+  normalidad.
 
 | Componente | Archivo | Rol |
 |------------|---------|-----|
@@ -234,6 +246,8 @@ con la cabecera `X-Pulso-Local: 1` y el modo operativo no habilita cron
 | Adaptador | `monitor/worker/src/toTrackingObservation.ts` | Acepta solo los seis campos publicados hoy; no inventa telemetría futura |
 | Memoria | `monitor/worker/src/trackingStore.ts` + `migrations/` | Snapshot, historial e incidentes en D1 local |
 | Incidentes | `monitor/worker/src/trackingIncidents.ts` | Apertura, actualización y cierre transaccional |
+| Programación | `monitor/worker/src/index.ts` (`runScheduledCheck`) | Comprobación programada local que reutiliza el ciclo manual |
+| Reloj local | `monitor/worker/scripts/watch-local.ts` | Dispara la entrada programada de Wrangler cada minuto en desarrollo |
 
 Umbrales vigentes (`monitor/worker/wrangler.jsonc`, entorno `operative`): una
 publicación está desactualizada con antigüedad **mayor** a 180000 ms (3 min) y
@@ -261,7 +275,10 @@ Reglas:
 
 #### Límites aceptados para el MVP
 
-- Las consultas son manuales; no existe vigilancia automática.
+- La vigilancia automática existe solo como simulación local (cron de un minuto
+  en `memory-local` y `npm run watch:local`); en Cloudflare no hay ejecución
+  programada desplegada y la comprobación del entorno operativo sigue siendo
+  manual.
 - La duración guardada es el intervalo **observado** entre apertura y cierre; no
   se infiere la hora exacta de la caída.
 - No identifica la causa de una interrupción (internet, GPS, batería, Android).
@@ -270,7 +287,10 @@ Reglas:
 - La migración `0002` conserva la memoria existente y no fabrica incidentes
   históricos.
 
-Pendiente: vigilancia automática, notificaciones e integración con Central
+Pendiente para la vigilancia real en Cloudflare: D1 remota con sus migraciones,
+configuración operativa (bus objetivo y acceso a Firebase), cron del Worker y
+habilitación explícita del modo programado operativo. La integración con Central
+es la próxima prioridad; las notificaciones externas quedan pospuestas
 (ROADMAP §2).
 
 ## 4. Arquitectura de BurritoUserApp
