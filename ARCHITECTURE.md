@@ -162,9 +162,11 @@ src/main.tsx → src/App.tsx
 `App.tsx` escucha `onAuthStateChanged` y mantiene un estado explícito de rol
 (`checking` → `admin` / `denied` / `error`). Con sesión, consulta
 `existeAdministrador(uid)` sobre `/administradores/{uid}` con timeout de 10 s.
-Mientras está en `checking` no muestra "No autorizado". Un `PERMISSION_DENIED`
-equivale a `denied`; un timeout o fallo de red va a `error` con reintento o
-cierre de sesión.
+Mientras está en `checking` no muestra "No autorizado". Una denegación de
+reglas equivale a `denied`: el SDK la entrega como `PERMISSION_DENIED` o como
+el mensaje exacto `Permission denied` sin `code`
+(`BUGS_RESUELTOS/adminweb.md`); un timeout o fallo de red va a `error` con
+reintento o cierre de sesión.
 
 `existeAdministrador` usa `get()` y retorna `snapshot.exists()`. Es la fuente
 de verdad del auth gate y no se reemplaza por un claim local ni por la UI.
@@ -261,8 +263,17 @@ comprobación son operaciones distintas. Devuelve `no-data` u `observed` con
 coordenadas, perfiles, SQL ni credenciales. Requiere la memoria D1 ya descrita
 y `PULSO_ADMIN_PROJECT_ID`, `PULSO_ADMIN_RTDB_ORIGIN` y
 `PULSO_ADMIN_RTDB_NAMESPACE` (solo loopback `demo-*` o el destino operativo
-exacto); sin autorización configurada la API falla cerrado. La pantalla de
-Central que consuma esta API sigue pendiente (ROADMAP).
+exacto); sin autorización configurada la API falla cerrado.
+
+La pantalla `/pulso` de Central (`src/features/pulso/`) consume esta API con el
+ID token de la sesión existente, sin segunda autenticación ni pantalla de login
+adicional. Entra por el menú y el `AppShell` existentes, consulta al entrar y
+con su botón Actualizar (sin sondeo de la API ni comprobaciones), y distingue
+carga, `no-data`, ausencia de incidentes, datos antiguos, error y denegado.
+Muestra el estado observado, la última comprobación (su antigüedad avanza con
+el reloj local sin reclasificar el seguimiento), los incidentes activos y los
+últimos 20; la autorización real sigue siendo la del Worker y la UI no la
+sustituye.
 
 | Componente | Archivo | Rol |
 |------------|---------|-----|
@@ -274,6 +285,7 @@ Central que consuma esta API sigue pendiente (ROADMAP).
 | Programación | `monitor/worker/src/index.ts` (`runScheduledCheck`) | Comprobación programada local que reutiliza el ciclo manual |
 | Reloj local | `monitor/worker/scripts/watch-local.ts` | Dispara la entrada programada de Wrangler cada minuto en desarrollo |
 | API de lectura | `monitor/worker/src/pulsoRead.ts` + `adminAuthorization.ts` | `GET /api/pulso`: `SELECT` de D1 y autorización por token de sesión; no evalúa ni consulta el tracking de RTDB |
+| Pantalla Central | `src/features/pulso/` (`PulsoScreen.tsx`, `pulso_service.ts`) | Consume `GET /api/pulso` con el token de la sesión; no evalúa ni consulta el tracking de RTDB |
 
 Umbrales vigentes (`monitor/worker/wrangler.jsonc`, entorno `operative`): una
 publicación está desactualizada con antigüedad **mayor** a 180000 ms (3 min) y
@@ -584,6 +596,9 @@ pertenecen al README de cada aplicación; esta tabla es el mapa de arquitectura.
 | `src/features/admin/components/TurnosEditor.tsx` | Editor reutilizable de turnos |
 | `src/features/admin/utils/turno.ts` | Modelo, validación y formato de turnos |
 | `src/features/admin/utils/turnoDraft.ts` | Estado de edición de turnos |
+| `src/features/pulso/services/pulso_service.ts` | Cliente de `GET /api/pulso` con el token de sesión y validación del contrato |
+| `src/features/pulso/pulsoPresentation.ts` | Etiquetas y formato es-PE de la pantalla PULSO |
+| `src/features/pulso/screen/PulsoScreen.tsx` | Vista `/pulso`: estados diferenciados y refresco manual |
 | `src/shared/config/env.ts` | Validación de variables `VITE_FIREBASE_*` |
 | `src/shared/config/firebase.ts` | Instancia de Firebase (Firebase JS SDK) |
 | `src/shared/utils/dni.ts` | Normalización y validación de DNI |

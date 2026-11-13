@@ -45,3 +45,38 @@ previos y no forman parte de esta corrección:
 **Lección:** foco de apertura y cambios del callback de teclado tienen
 ciclos diferentes. Sus efectos independientes evitan repetir el enfoque
 sin fijar callbacks obsoletos ni retocar cada pantalla.
+
+## CASO 002 — Denegación de rol sin `code` mostraba error genérico
+
+**Fecha:** 13/11/2026.
+
+**Síntoma:** una cuenta con sesión válida pero sin nodo
+`/administradores/{uid}` recibía «No se pudo verificar tu cuenta» en lugar de
+«No autorizado». Detectado con el SDK real de RTDB contra el emulador en las
+pruebas de navegador de la pantalla PULSO
+(`AdminWeb/monitor/worker/tests/pulsoScreen.integration.test.ts`).
+
+**Causa:** `get()` del SDK de Firebase para la web rechaza la denegación de
+reglas con `Error('Permission denied')` sin propiedad `code`;
+`admin_check.ts` solo reconocía `code === 'PERMISSION_DENIED'`, así que el
+caso caía en el error genérico reservado para red/timeout.
+
+**Solución:** únicamente `AdminWeb/src/features/admin/services/admin_check.ts`:
+reconocer además el mensaje exacto `Permission denied` como denegación. Red y
+timeout siguen derivando a `error` con Reintentar/Cerrar Sesión; no se amplió
+a otras cadenas ni se convirtió un fallo de red en denegación.
+
+**Verificación:** E2E con navegador real (8 pruebas del archivo citado): la
+cuenta sin rol recibe «No autorizado» tras iniciar sesión, y red y timeout se
+distinguen igual. Suite del commit: 16 pruebas en `npm run test:pulso`
+(incluye build de producción sin endpoints de emulador), lint, typecheck y
+build aprobados.
+
+**Estado:** corregido en `35fb2cc` (`feat/pulso-monitor-core`, rama del
+monitor). El flujo afectado es el mismo gate vigente de la app; no hay
+backport pendiente.
+
+**Lección:** las denegaciones de reglas del SDK web de RTDB pueden llegar sin
+`error.code`; reconocer el mensaje exacto evita que un caso de autorización se
+disfrace de fallo de infraestructura. La autorización real no depende de este
+gate ni de la UI: el Worker la revalida por su cuenta.
