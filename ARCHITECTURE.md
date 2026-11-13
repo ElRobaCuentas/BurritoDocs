@@ -86,6 +86,7 @@ nodo administrativo, del índice de conductores o de las reglas de cada path.
 | AdminWeb | CRUD de configuración y lectura de listas | `/choferes`, `/buses`, `/asignaciones`, `/administradores` |
 | AdminWeb | Inicializa o elimina el nodo de un bus | `/ubicacion_buses/{placa}` |
 | AdminWeb (PULSO) | Lee el tracking por HTTP público para evaluar el seguimiento (comprobación manual o programada en local) | REST `/ubicacion_buses/{busId}.json` |
+| AdminWeb (PULSO) | Verifica el rol de la sesión de Central al autorizar su API de lectura | REST `/administradores/{uid}.json` |
 
 ### Autenticación y autorización
 
@@ -239,6 +240,30 @@ aplicaciones. Su acceso tiene dos vías (`monitor/worker/src/index.ts`):
   sanitizado; no se confunde con un incidente de fuente, que se guarda con
   normalidad.
 
+Además del ciclo de comprobación, el Worker expone para Central una API de solo
+lectura: `GET /api/pulso` (`monitor/worker/src/pulsoRead.ts`). Somete a la misma
+frontera local que `/evaluate` (loopback y `PULSO_LOCAL_ONLY`) y autoriza con el
+ID token de la sesión de Central vía `Authorization: Bearer`
+(`monitor/worker/src/adminAuthorization.ts`): prevalida la forma del token y
+delega la verificación a Firebase leyendo `REST /administradores/{uid}.json`
+con `auth={token}`, igual que hace `existeAdministrador` en el panel; la
+existencia del nodo habilita la lectura y su ausencia o rechazo del token
+devuelven `403 access-denied`. La respuesta proviene exclusivamente de D1 en un
+solo batch de `SELECT` (estado con su observación enlazada por `last_check_id`,
+incidentes activos y los últimos 20 incidentes): **no ejecuta el evaluador ni
+consulta el tracking de RTDB**; consultar información guardada y ejecutar una
+comprobación son operaciones distintas. Devuelve `no-data` u `observed` con
+`observedState`, `lastCheck` (antigüedad de la comprobación guardada, con
+`freshness` informativo según el umbral) e incidentes; los errores distinguen
+`authentication-required`/`invalid-token` (401), `access-denied`/`local-only`
+(403) y `authorization-not-configured`/`authorization-unavailable`/
+`read-not-configured`/`read-failed` (503), y la respuesta no expone
+coordenadas, perfiles, SQL ni credenciales. Requiere la memoria D1 ya descrita
+y `PULSO_ADMIN_PROJECT_ID`, `PULSO_ADMIN_RTDB_ORIGIN` y
+`PULSO_ADMIN_RTDB_NAMESPACE` (solo loopback `demo-*` o el destino operativo
+exacto); sin autorización configurada la API falla cerrado. La pantalla de
+Central que consuma esta API sigue pendiente (ROADMAP).
+
 | Componente | Archivo | Rol |
 |------------|---------|-----|
 | Evaluador | `monitor/src/domain/evaluateTracking.ts` | Clasifica la publicación (fresca, desactualizada, desconocida), la interrupción y la recuperación |
@@ -248,6 +273,7 @@ aplicaciones. Su acceso tiene dos vías (`monitor/worker/src/index.ts`):
 | Incidentes | `monitor/worker/src/trackingIncidents.ts` | Apertura, actualización y cierre transaccional |
 | Programación | `monitor/worker/src/index.ts` (`runScheduledCheck`) | Comprobación programada local que reutiliza el ciclo manual |
 | Reloj local | `monitor/worker/scripts/watch-local.ts` | Dispara la entrada programada de Wrangler cada minuto en desarrollo |
+| API de lectura | `monitor/worker/src/pulsoRead.ts` + `adminAuthorization.ts` | `GET /api/pulso`: `SELECT` de D1 y autorización por token de sesión; no evalúa ni consulta el tracking de RTDB |
 
 Umbrales vigentes (`monitor/worker/wrangler.jsonc`, entorno `operative`): una
 publicación está desactualizada con antigüedad **mayor** a 180000 ms (3 min) y

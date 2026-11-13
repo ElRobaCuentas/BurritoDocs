@@ -36,7 +36,7 @@ La propuesta histórica de caducidad a los 60 s no es trabajo pendiente.
 | T5.1 — Calibración de paraderos | El Burrito | Pendiente | Presencia en Campus UNMSM | Coordenadas GPS reales de los 10 paraderos. Sin otra dependencia funcional documentada. |
 | PULSO — Vigilancia automática | AdminWeb (monitor) | Parcial | — | Comprobación programada local cada minuto (`runScheduledCheck` con `npm run watch:local`; cron solo en `memory-local`) reutilizando evaluador, D1 e incidentes (ARCHITECTURE §3.2). Pendiente el despliegue real en Cloudflare: D1 remota, configuración operativa y ejecución programada. |
 | PULSO — Notificaciones de incidentes | AdminWeb (monitor) | Pospuesta | PULSO — Vigilancia automática | Avisos al abrir o cerrar incidentes; el canal está por elegir. Pospuesta a favor de la integración con Central. |
-| PULSO — Integración con Central | AdminWeb | Pendiente | — | Próxima prioridad de PULSO: vista funcional de incidentes y estado de seguimiento; la interfaz de Central no se ha modificado en el MVP. Ya no depende de las notificaciones, que quedaron pospuestas. |
+| PULSO — Integración con Central | AdminWeb | Parcial | — | API de solo lectura `GET /api/pulso` implementada y verificada en local (ARCHITECTURE §3.2). Pendiente la vista funcional de Central que la consuma: la interfaz de Central no se ha modificado en el MVP. Ya no depende de las notificaciones, que quedaron pospuestas. |
 
 **Entornos de trabajo:** Bloque A (Casa/Calle) = implementación y pruebas GPS
 locales con un Motorola, BurritoDriverApp en segundo plano y El Burrito en primer
