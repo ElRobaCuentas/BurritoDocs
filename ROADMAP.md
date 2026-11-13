@@ -34,6 +34,9 @@ La propuesta histórica de caducidad a los 60 s no es trabajo pendiente.
 | T4.3 — Geofencing | BurritoDriverApp | Pendiente | T4.2 | Punto Cero Dinámico (ADR-013), máquina de estados con Haversine e histéresis 40/80 m. La validación real depende de la implementación; ajustar radios contra multipath de edificios en campus. |
 | T5.2 — Smoothing | El Burrito | Pendiente | T4.4 | Interpolación (moving average / Kalman ligero). El ajuste fino depende de la implementación y de datos reales del circuito en campus. |
 | T5.1 — Calibración de paraderos | El Burrito | Pendiente | Presencia en Campus UNMSM | Coordenadas GPS reales de los 10 paraderos. Sin otra dependencia funcional documentada. |
+| PULSO — Vigilancia automática | AdminWeb (monitor) | Pendiente | — | Consultas periódicas del Worker sobre RTDB operativa reutilizando el evaluador y el registro de incidentes (ARCHITECTURE §3.2). Hoy las comprobaciones son manuales. |
+| PULSO — Notificaciones de incidentes | AdminWeb (monitor) | Pendiente | PULSO — Vigilancia automática | Avisos al abrir o cerrar incidentes; el canal está por elegir. |
+| PULSO — Integración con Central | AdminWeb | Pendiente | PULSO — Notificaciones | Vista de incidentes y estado de seguimiento; la interfaz de Central no se ha modificado en el MVP. |
 
 **Entornos de trabajo:** Bloque A (Casa/Calle) = implementación y pruebas GPS
 locales con un Motorola, BurritoDriverApp en segundo plano y El Burrito en primer

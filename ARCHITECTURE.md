@@ -12,6 +12,7 @@ evidencia histórica, en `BUGS_RESUELTOS/`.
 - [§2. Arquitectura del Ecosistema](#2-arquitectura-del-ecosistema)
 - [§3. Arquitectura de BurritoDriverApp](#3-arquitectura-de-burritodriverapp-conductor)
 - [§3.1. Arquitectura de AdminWeb](#31-arquitectura-de-adminweb-administrador)
+- [§3.2. PULSO (monitor de seguimiento)](#32-pulso-monitor-de-seguimiento)
 - [§4. Arquitectura de BurritoUserApp](#4-arquitectura-de-burritouserapp)
 - [§5. Comunicación y Flujo de Datos](#5-comunicación-y-flujo-de-datos)
 - [§6. Componentes Principales](#6-componentes-principales)
@@ -84,6 +85,7 @@ nodo administrativo, del índice de conductores o de las reglas de cada path.
 | El Burrito | Crea feedback | `/comentarios` |
 | AdminWeb | CRUD de configuración y lectura de listas | `/choferes`, `/buses`, `/asignaciones`, `/administradores` |
 | AdminWeb | Inicializa o elimina el nodo de un bus | `/ubicacion_buses/{placa}` |
+| AdminWeb (PULSO) | Lee el tracking por HTTP público para evaluar el seguimiento (consulta manual) | REST `/ubicacion_buses/{busId}.json` |
 
 ### Autenticación y autorización
 
@@ -216,6 +218,60 @@ Límites de la operación administrativa:
   ni bloquean el tracking.
 
 La estructura de archivos relevante está centralizada en §6.
+
+### 3.2 PULSO (monitor de seguimiento)
+
+Worker local de Cloudflare en `AdminWeb/monitor/` que observa el tracking
+publicado en RTDB y comprueba su estado. No escribe en RTDB y no modifica
+aplicaciones. Su acceso es **manual**: `GET /evaluate` solo responde en loopback
+con la cabecera `X-Pulso-Local: 1` y el modo operativo no habilita cron
+(`monitor/worker/src/index.ts`); cada comprobación se ejecuta a mano.
+
+| Componente | Archivo | Rol |
+|------------|---------|-----|
+| Evaluador | `monitor/src/domain/evaluateTracking.ts` | Clasifica la publicación (fresca, desactualizada, desconocida), la interrupción y la recuperación |
+| Cliente RTDB | `monitor/worker/src/firebaseRtdb.ts` | GET con timeout; distingue errores sin atribuir causa |
+| Adaptador | `monitor/worker/src/toTrackingObservation.ts` | Acepta solo los seis campos publicados hoy; no inventa telemetría futura |
+| Memoria | `monitor/worker/src/trackingStore.ts` + `migrations/` | Snapshot, historial e incidentes en D1 local |
+| Incidentes | `monitor/worker/src/trackingIncidents.ts` | Apertura, actualización y cierre transaccional |
+
+Umbrales vigentes (`monitor/worker/wrangler.jsonc`, entorno `operative`): una
+publicación está desactualizada con antigüedad **mayor** a 180000 ms (3 min) y
+la recuperación se confirma con **2** publicaciones válidas y distintas.
+
+#### Incidentes del MVP (`migrations/0002_tracking_incidents.sql`)
+
+| Tipo | Se abre | Se cierra |
+|------|---------|-----------|
+| `tracking-interrupted` (seguimiento interrumpido) | Durante vigilancia activa, cuando la antigüedad de publicación supera el umbral | `publications-recovered` al confirmar la recuperación del evaluador, o `tracking-inactive` al observar `isActive:false` (sin registrar recuperación ficticia) |
+| `source-unavailable` (fuente inaccesible) | Durante vigilancia activa, cuando falla la consulta a Firebase | `source-accessible` al volver a poder leer, aunque la publicación siga desactualizada |
+
+Reglas:
+
+- La vigilancia (`monitoring_active`) comienza al observar `isActive:true` y se
+  desactiva solo al observar `isActive:false`. Datos ausentes, inválidos o una
+  fuente inaccesible la conservan. No hay horarios de jornada.
+- Un problema continuo es un único incidente por fuente, bus y tipo (índice
+  único parcial sobre incidentes abiertos); ambos tipos pueden coexistir. Cada
+  comprobación continua incrementa `check_count` y `updated_at`.
+- Estado, historial, poda e incidentes se escriben en un mismo batch D1 con CAS
+  (`revision` + `last_check_id`); una comprobación perdedora revierte todo
+  (`memory-conflict`). El historial de observaciones se poda a los 7 días; los
+  incidentes no se podan.
+
+#### Límites aceptados para el MVP
+
+- Las consultas son manuales; no existe vigilancia automática.
+- La duración guardada es el intervalo **observado** entre apertura y cierre; no
+  se infiere la hora exacta de la caída.
+- No identifica la causa de una interrupción (internet, GPS, batería, Android).
+- Sin observar `isActive:false` no puede deducir por sí mismo el fin de la
+  jornada.
+- La migración `0002` conserva la memoria existente y no fabrica incidentes
+  históricos.
+
+Pendiente: vigilancia automática, notificaciones e integración con Central
+(ROADMAP §2).
 
 ## 4. Arquitectura de BurritoUserApp
 
