@@ -224,9 +224,11 @@ La estructura de archivos relevante está centralizada en §6.
 
 ### 3.2 PULSO (monitor de seguimiento)
 
-Worker local de Cloudflare en `AdminWeb/monitor/` que observa el tracking
-publicado en RTDB y comprueba su estado. No escribe en RTDB y no modifica
-aplicaciones. Su acceso tiene dos vías (`monitor/worker/src/index.ts`):
+Worker de Cloudflare en `AdminWeb/monitor/` que observa el tracking publicado en
+RTDB y comprueba su estado. No escribe en RTDB y no modifica aplicaciones. Hoy se
+ejecuta y verifica solo en local; el entorno remoto está preparado, pero **no
+desplegado** (§3.2.1). Su acceso local tiene dos vías
+(`monitor/worker/src/index.ts`):
 
 - **Manual:** `GET /evaluate` solo responde en loopback con la cabecera
   `X-Pulso-Local: 1`.
@@ -234,7 +236,8 @@ aplicaciones. Su acceso tiene dos vías (`monitor/worker/src/index.ts`):
   manual (evaluador, D1 e incidentes) y exige memoria D1
   (`PULSO_MEMORY: 'd1-local'`); rechaza el modo operativo con
   `operative-manual-only`, que sigue sin habilitar cron. Solo el entorno
-  `memory-local` de `wrangler.jsonc` declara cron (`* * * * *`, un minuto).
+  `memory-local` de `wrangler.jsonc` declara un cron de un minuto (`* * * * *`);
+  `production` mantiene `triggers.crons` vacío (§3.2.1).
   Wrangler `dev` no ejecuta el reloj por sí solo: en desarrollo se dispara con
   `npm run watch:local` (`monitor/worker/scripts/watch-local.ts`), que invoca la
   entrada programada local de Wrangler cada ~60 s y se detiene con Ctrl+C. Un
@@ -243,9 +246,11 @@ aplicaciones. Su acceso tiene dos vías (`monitor/worker/src/index.ts`):
   normalidad.
 
 Además del ciclo de comprobación, el Worker expone para Central una API de solo
-lectura: `GET /api/pulso` (`monitor/worker/src/pulsoRead.ts`). Somete a la misma
-frontera local que `/evaluate` (loopback y `PULSO_LOCAL_ONLY`) y autoriza con el
-ID token de la sesión de Central vía `Authorization: Bearer`
+lectura: `GET /api/pulso` (`monitor/worker/src/pulsoRead.ts`). En local somete a
+la misma frontera que `/evaluate` (loopback y `PULSO_LOCAL_ONLY`); el entorno
+remoto exige HTTPS, el origen exacto de Central (`PULSO_CENTRAL_ORIGIN`) y CORS
+limitado a `GET` con `Authorization`, con `OPTIONS` 204 para el preflight.
+Autoriza con el ID token de la sesión de Central vía `Authorization: Bearer`
 (`monitor/worker/src/adminAuthorization.ts`): prevalida la forma del token y
 delega la verificación a Firebase leyendo `REST /administradores/{uid}.json`
 con `auth={token}`, igual que hace `existeAdministrador` en el panel; la
@@ -280,16 +285,18 @@ sustituye.
 | Evaluador | `monitor/src/domain/evaluateTracking.ts` | Clasifica la publicación (fresca, desactualizada, desconocida), la interrupción y la recuperación |
 | Cliente RTDB | `monitor/worker/src/firebaseRtdb.ts` | GET con timeout; distingue errores sin atribuir causa |
 | Adaptador | `monitor/worker/src/toTrackingObservation.ts` | Acepta solo los seis campos publicados hoy; no inventa telemetría futura |
-| Memoria | `monitor/worker/src/trackingStore.ts` + `migrations/` | Snapshot, historial e incidentes en D1 local |
+| Memoria | `monitor/worker/src/trackingStore.ts` + `migrations/` | Snapshot, historial e incidentes en D1 (local o remota) |
 | Incidentes | `monitor/worker/src/trackingIncidents.ts` | Apertura, actualización y cierre transaccional |
-| Programación | `monitor/worker/src/index.ts` (`runScheduledCheck`) | Comprobación programada local que reutiliza el ciclo manual |
+| Ejecución | `monitor/worker/src/executionConfig.ts` | Distingue local de remoto, valida la configuración completa y falla cerrado antes de leer Firebase o escribir en D1 |
+| Programación | `monitor/worker/src/index.ts` (`runScheduledCheck` + `scheduled`) | Comprobación programada que reutiliza el ciclo manual; en remoto exige el interruptor habilitado |
 | Reloj local | `monitor/worker/scripts/watch-local.ts` | Dispara la entrada programada de Wrangler cada minuto en desarrollo |
 | API de lectura | `monitor/worker/src/pulsoRead.ts` + `adminAuthorization.ts` | `GET /api/pulso`: `SELECT` de D1 y autorización por token de sesión; no evalúa ni consulta el tracking de RTDB |
 | Pantalla Central | `src/features/pulso/` (`PulsoScreen.tsx`, `pulso_service.ts`) | Consume `GET /api/pulso` con el token de la sesión; no evalúa ni consulta el tracking de RTDB |
 
-Umbrales vigentes (`monitor/worker/wrangler.jsonc`, entorno `operative`): una
-publicación está desactualizada con antigüedad **mayor** a 180000 ms (3 min) y
-la recuperación se confirma con **2** publicaciones válidas y distintas.
+Umbrales vigentes (`monitor/worker/wrangler.jsonc`, entornos `operative` y
+`production`): una publicación está desactualizada con antigüedad **mayor** a
+180000 ms (3 min) y la recuperación se confirma con **2** publicaciones válidas y
+distintas.
 
 #### Incidentes del MVP (`migrations/0002_tracking_incidents.sql`)
 
@@ -325,11 +332,92 @@ Reglas:
 - La migración `0002` conserva la memoria existente y no fabrica incidentes
   históricos.
 
-Pendiente para la vigilancia real en Cloudflare: D1 remota con sus migraciones,
-configuración operativa (bus objetivo y acceso a Firebase), cron del Worker y
-habilitación explícita del modo programado operativo. La integración con Central
-es la próxima prioridad; las notificaciones externas quedan pospuestas
-(ROADMAP §2).
+#### 3.2.1 Preparación del despliegue remoto (implementada y verificada en local, sin desplegar)
+
+El código y la configuración del entorno `production` están preparados y
+verificados localmente; **no hay D1 remota, Worker desplegado, cron activo,
+Hosting publicado ni consultas al Firebase operativo**. La preparación se validó
+con pruebas automatizadas, typecheck, lint, build y
+`wrangler deploy --env production --dry-run`, que no autentica ni crea recursos.
+
+Configuración prevista en `monitor/worker/wrangler.jsonc` (`env.production`):
+
+| Ámbito | Valor | Estado |
+|--------|-------|--------|
+| Worker | `name: pulso-monitor`, `workers_dev: true`, `preview_urls: false` | Definido; falta confirmar cuenta y subdominio |
+| D1 | Binding `PULSO_DB` → `pulso-memory-production`, `migrations_dir: migrations` | Definido; `database_id` vacío hasta crear la base |
+| Cron | `triggers.crons: []` | Vacío; no hay ejecución programada |
+| Ejecución | `PULSO_EXECUTION: cloudflare`, `PULSO_LOCAL_ONLY: false`, `PULSO_MEMORY: d1` | Definido |
+| Interruptor | `PULSO_SCHEDULE_ENABLED: false` | Apagado |
+| Origen de Central | `PULSO_CENTRAL_ORIGIN` | Vacío hasta conocer el origen HTTPS real |
+| Fuente | `RTDB_MODE: operative-public`, `BUS_ID: AHK-459`, origen y namespace `burritounmsm-default-rtdb` | Definido |
+| Umbrales | `180000` ms, `2` confirmaciones, desfase futuro `5000` ms, timeout de lectura `5000` ms | Definido |
+| Autorización | `PULSO_ADMIN_PROJECT_ID`, `PULSO_ADMIN_RTDB_ORIGIN` y `PULSO_ADMIN_RTDB_NAMESPACE` de `burritounmsm` | Definido |
+
+**Selección de modo.** `executionConfig.ts` interpreta `PULSO_EXECUTION`
+ausente o `local` como ejecución local; `cloudflare` habilita el modo remoto;
+cualquier otro valor falla con `invalid-execution-configuration`. En remoto,
+`validateRemoteConfiguration` exige la configuración completa antes de consultar
+Firebase o escribir en D1: modo remoto explícito, `PULSO_LOCAL_ONLY=false`,
+fuente `operative-public`, memoria `d1` con binding `PULSO_DB`, interruptor
+declarado como `true` o `false`, umbrales exactos, timeout entre 1 y 30000 ms,
+bus objetivo válido, destino de autorización no local y origen de Central HTTPS
+sin ruta ni credenciales. Una configuración incompleta o mezclada no lee ni
+escribe: la API responde `503 read-not-configured` y la comprobación falla
+cerrada. Los modos locales conservan su comportamiento y no adquieren permisos
+remotos.
+
+**Interruptor y cron.** Son condiciones independientes: el interruptor
+(`PULSO_SCHEDULE_ENABLED`) decide si la ejecución remota puede evaluar y
+persistir, y `triggers.crons` decide si Cloudflare invoca el Worker. Con el
+interruptor apagado, el handler programado registra `{"status":"schedule-disabled"}`
+y retorna sin consultar ni escribir. Con `crons` vacío no hay invocación
+programada aunque el interruptor esté encendido. Para desactivar el cron hay que
+declarar `crons: []` de forma explícita; omitir la clave no elimina un trigger ya
+publicado. La activación de ambos exige despliegue y autorización, y un cambio
+de cron no se propaga de inmediato.
+
+**API remota.** `GET /api/pulso` conserva el mismo contrato y la misma
+autorización: `Authorization: Bearer` con el ID token de Central, verificado por
+Firebase contra `/administradores/{uid}` con las reglas existentes, sin
+contraseña ni login adicional. En remoto solo acepta HTTPS y `GET` sin query; si
+la petición trae `Origin`, debe coincidir exactamente con `PULSO_CENTRAL_ORIGIN`.
+`OPTIONS` responde 204 para `GET` + `Authorization` y los errores dirigidos a un
+origen permitido incluyen CORS. La lectura sigue siendo exclusivamente `SELECT` en D1: no ejecuta el
+evaluador ni consulta el tracking. Por eso la pantalla puede leer lo guardado
+aunque el cron esté apagado; sin comprobaciones previas devuelve `no-data`.
+`/evaluate` continúa siendo local: en remoto responde `403 local-only`.
+
+**Conexión de Central.** El cliente de la pantalla
+(`src/shared/config/env.ts`, `pulso_service.ts`) lee `VITE_PULSO_API_ORIGIN`,
+valida que sea un origen HTTPS sin ruta, credenciales, query ni fragmento, y que
+no sea loopback, y compone `${origen}/api/pulso`. Si la variable falta en una build de producción,
+el error aparece solo al abrir PULSO y no bloquea el resto del panel. Los modos
+locales siguen usando el proxy `/api/pulso` sin cargar el `.env` operativo. La
+petición reutiliza el token de la sesión, sin cookies ni redirecciones, y no
+define una segunda autenticación.
+
+**Configuraciones reales pendientes:** UUID de la D1 remota; origen HTTPS exacto
+de Central para `PULSO_CENTRAL_ORIGIN`; origen HTTPS del Worker para
+`VITE_PULSO_API_ORIGIN`; cuenta y subdominio de Cloudflare.
+
+**Orden previsto de despliegue y activación** (cada paso requiere autorización
+explícita; ninguno se ejecutó):
+
+1. Iniciar sesión en Cloudflare y crear la D1 `pulso-memory-production`.
+2. Aplicar las migraciones `0001` y `0002` en la D1 remota.
+3. Completar `database_id` y `PULSO_CENTRAL_ORIGIN` en `env.production`; mantener
+   `PULSO_SCHEDULE_ENABLED=false` y `crons: []`.
+4. Desplegar el Worker y verificar la API remota con un token de administrador.
+5. Compilar Central con `VITE_PULSO_API_ORIGIN` y publicar Hosting.
+6. Activar el interruptor y el cron de un minuto; comprobar la vigilancia y el
+   cierre de incidentes en la pantalla.
+7. Verificar que la actualización funciona con la computadora apagada, que el
+   tracking consultado es el operativo (no el emulado) y que las consultas sin
+   autorización siguen bloqueadas.
+
+La integración con Central es la próxima prioridad. Las notificaciones externas
+quedan pospuestas (ROADMAP §2).
 
 ## 4. Arquitectura de BurritoUserApp
 
@@ -599,7 +687,7 @@ pertenecen al README de cada aplicación; esta tabla es el mapa de arquitectura.
 | `src/features/pulso/services/pulso_service.ts` | Cliente de `GET /api/pulso` con el token de sesión y validación del contrato |
 | `src/features/pulso/pulsoPresentation.ts` | Etiquetas y formato es-PE de la pantalla PULSO |
 | `src/features/pulso/screen/PulsoScreen.tsx` | Vista `/pulso`: estados diferenciados y refresco manual |
-| `src/shared/config/env.ts` | Validación de variables `VITE_FIREBASE_*` |
+| `src/shared/config/env.ts` | Validación de `VITE_FIREBASE_*` y del origen HTTPS opcional de PULSO (`VITE_PULSO_API_ORIGIN`) |
 | `src/shared/config/firebase.ts` | Instancia de Firebase (Firebase JS SDK) |
 | `src/shared/utils/dni.ts` | Normalización y validación de DNI |
 | `src/shared/utils/date.ts` | Fechas de calendario America/Lima |
