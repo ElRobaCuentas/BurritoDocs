@@ -334,7 +334,7 @@ Reglas:
 - La migración `0002` conserva la memoria existente y no fabrica incidentes
   históricos.
 
-#### 3.2.1 Despliegue remoto (Worker publicado, vigilancia apagada)
+#### 3.2.1 Despliegue remoto e integración con Central (vigilancia apagada)
 
 La preparación local se validó con pruebas automatizadas, typecheck, lint, build
 y `wrangler deploy --env production --dry-run`, que no autentica ni crea
@@ -344,10 +344,10 @@ aplicaron sus dos migraciones y se habilitó el subdominio `workers.dev`
 (`elburrito`). Después se confirmó el origen de Central, se completó
 `PULSO_CENTRAL_ORIGIN` y se desplegó el Worker en
 **`https://pulso-monitor.elburrito.workers.dev`**, que sirve la API en
-`/api/pulso`. **La vigilancia sigue desactivada (`PULSO_SCHEDULE_ENABLED=false`),
-no hay cron (`crons: []`), Hosting no se publicó y no se consultó el Firebase
-operativo**; por eso la verificación autenticada con un token de administrador
-sigue pendiente.
+`/api/pulso`. **La vigilancia sigue desactivada (`PULSO_SCHEDULE_ENABLED=false`)
+y no hay cron (`crons: []`)**. En ese despliegue no se publicó Hosting ni se
+consultó la ubicación operativa del bus. Después se publicó Central y se completó
+la verificación autenticada (más abajo).
 
 Configuración del entorno `production` en `monitor/worker/wrangler.jsonc`:
 
@@ -381,9 +381,32 @@ responde `403 access-denied` sin cabecera CORS; el preflight de Central para
 `POST` o cabeceras extra y peticiones `POST` se rechazan (`403` y `405`);
 `/evaluate` responde `403 local-only` incluso con `X-Pulso-Local: 1`; las
 respuestas usan `cache-control: no-store` y `x-content-type-options: nosniff`, sin
-credenciales CORS. No se envió ningún token de Firebase válido ni se consultó el
-Firebase operativo. Después de las pruebas, las tres tablas D1 seguían con cero
-filas y sin escrituras.
+credenciales CORS. No se envió ningún token de Firebase válido ni se consultó la
+ubicación operativa del bus. Después de las pruebas, las tres tablas D1 seguían
+con cero filas y sin escrituras.
+
+**Publicación de Central y validación administrativa.** Con autorización
+explícita se compiló Central con `VITE_PULSO_API_ORIGIN` —configurada
+manualmente en `AdminWeb/.env`, que no se leyó ni modificó— y se publicó solo
+Hosting con `firebase deploy --only hosting --project burritounmsm`. Antes del
+despliegue se aprobaron el lint, las 20 pruebas de cliente y las 8 de integración
+local; la auditoría del build confirmó que la aplicación resuelve
+`https://pulso-monitor.elburrito.workers.dev/api/pulso` y el proyecto Firebase
+`burritounmsm`, sin marcadores de sandbox ni endpoints de emulador (los
+literales `http://localhost` del bundle son valores internos de React Router y
+Firebase, no endpoints configurados). El release quedó `FINALIZED`: versión
+`1952a1f1e616bfa3`, release `1794779471348000`, `2026-11-15T21:51:11.348Z`; la
+versión live previa `004ca7b34e3d9821` (`2026-11-06T15:04:05.158Z`) sirve de
+referencia de rollback. Los cuatro archivos publicados coinciden byte a byte con
+`dist/` (SHA-256) y `/pulso` devuelve `index.html`. En un navegador sin sesión,
+la pantalla de acceso renderizó sin excepciones ni peticiones locales, y el
+Worker respondió `401 invalid-token` a un token malformado con el CORS correcto.
+La validación real con la cuenta administrativa habitual mostró «Sin registros
+de PULSO» y «Todavía no hay comprobaciones guardadas para el bus AHK-459», sin
+errores de acceso ni de conectividad. No se solicitaron ni registraron
+contraseñas o tokens, y las tres tablas D1 siguieron con cero filas. La
+autorización leyó `/administradores/{uid}` del proyecto `burritounmsm`, pero no
+se consultó la ubicación operativa del bus.
 
 **Selección de modo.** `executionConfig.ts` interpreta `PULSO_EXECUTION`
 ausente o `local` como ejecución local; `cloudflare` habilita el modo remoto;
@@ -417,7 +440,9 @@ la petición trae `Origin`, debe coincidir exactamente con `PULSO_CENTRAL_ORIGIN
 origen permitido incluyen CORS. La lectura sigue siendo exclusivamente `SELECT`
 en D1: no ejecuta el evaluador ni consulta el tracking. Por eso la pantalla puede
 leer lo guardado aunque el cron esté apagado; sin comprobaciones previas devuelve
-`no-data`. `/evaluate` continúa siendo local: en remoto responde `403 local-only`.
+`no-data`. En producción, con la D1 vacía, esa lectura autenticada devolvió
+`no-data` y la pantalla lo presentó como ausencia de registros. `/evaluate`
+continúa siendo local: en remoto responde `403 local-only`.
 
 **Conexión de Central.** El cliente de la pantalla
 (`src/shared/config/env.ts`, `pulso_service.ts`) lee `VITE_PULSO_API_ORIGIN`,
@@ -428,30 +453,34 @@ del panel. Los modos locales siguen usando el proxy `/api/pulso` sin cargar el
 `.env` operativo. La petición reutiliza el token de la sesión, sin cookies ni
 redirecciones, y no define una segunda autenticación.
 
-**Valores resueltos y pendientes.** `PULSO_CENTRAL_ORIGIN` ya está configurado
-con `https://burritounmsm.web.app`, y el Worker responde en
-`https://pulso-monitor.elburrito.workers.dev`, valor que la build de Central debe
-usar en `VITE_PULSO_API_ORIGIN`. Con autorización explícita quedan pendientes la
-publicación de Central y la activación del interruptor y del cron.
+**Valores resueltos y pendientes.** `PULSO_CENTRAL_ORIGIN` está configurado con
+`https://burritounmsm.web.app`, el Worker responde en
+`https://pulso-monitor.elburrito.workers.dev` y la build publicada de Central usa
+ese valor en `VITE_PULSO_API_ORIGIN`. Central está publicada y la lectura
+autenticada fue validada. Solo queda pendiente, con autorización explícita, la
+activación del interruptor y del cron.
 
 **Orden de despliegue y activación** (cada paso requiere autorización explícita;
-los pasos 1 a 4 se ejecutaron, salvo la prueba con token de administrador):
+los pasos 1 a 5 se ejecutaron):
 
 1. Crear la D1 `pulso-memory-production` en la cuenta confirmada (hecho).
 2. Aplicar las migraciones `0001` y `0002` en la D1 remota (hecho).
 3. Completar `PULSO_CENTRAL_ORIGIN` en `env.production`, conservando
    `PULSO_SCHEDULE_ENABLED=false` y `crons: []` (hecho).
 4. Desplegar el Worker (hecho) y verificar la API remota sin token y el CORS
-   (hecho). La verificación con un token de administrador sigue pendiente.
-5. Compilar Central con `VITE_PULSO_API_ORIGIN` y publicar Hosting (pendiente).
+   (hecho); después se validó la lectura con una sesión administrativa real en
+   producción (hecho).
+5. Compilar Central con `VITE_PULSO_API_ORIGIN` y publicar Hosting (hecho:
+   release `1794779471348000`, versión `1952a1f1e616bfa3`).
 6. Activar el interruptor y el cron de un minuto; comprobar la vigilancia y el
    cierre de incidentes en la pantalla (pendiente).
 7. Verificar que la actualización funciona con la computadora apagada, que el
    tracking consultado es el operativo (no el emulado) y que las consultas sin
    autorización siguen bloqueadas (pendiente).
 
-La integración con Central es la próxima prioridad. Las notificaciones externas
-quedan pospuestas (ROADMAP §2).
+La integración con Central quedó validada en producción. La próxima prioridad es
+la vigilancia automática; las notificaciones externas quedan pospuestas
+(ROADMAP §2).
 
 ## 4. Arquitectura de BurritoUserApp
 
