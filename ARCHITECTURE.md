@@ -225,10 +225,10 @@ La estructura de archivos relevante está centralizada en §6.
 ### 3.2 PULSO (monitor de seguimiento)
 
 Worker de Cloudflare en `AdminWeb/monitor/` que observa el tracking publicado en
-RTDB y comprueba su estado. No escribe en RTDB y no modifica aplicaciones. Hoy se
-ejecuta y verifica solo en local; el entorno remoto está preparado —D1 remota
-creada y migrada—, pero el Worker **no está desplegado** (§3.2.1). Su acceso local
-tiene dos vías
+RTDB y comprueba su estado. No escribe en RTDB y no modifica aplicaciones. El
+ciclo de comprobación se ejecuta y verifica en local; el Worker remoto está
+desplegado en `production` con D1 remota, pero sin cron ni vigilancia activa
+(§3.2.1). Su acceso local tiene dos vías
 (`monitor/worker/src/index.ts`):
 
 - **Manual:** `GET /evaluate` solo responde en loopback con la cabecera
@@ -321,10 +321,11 @@ Reglas:
 
 #### Límites aceptados para el MVP
 
-- La vigilancia automática existe solo como simulación local (cron de un minuto
-  en `memory-local` y `npm run watch:local`); en Cloudflare no hay ejecución
-  programada desplegada y la comprobación del entorno operativo sigue siendo
-  manual.
+- La vigilancia automática programada no se ejecuta en Cloudflare: el Worker está
+  desplegado, pero `PULSO_SCHEDULE_ENABLED` está apagado y `crons` vacío. La
+  simulación local (cron de un minuto en `memory-local` y `npm run watch:local`)
+  y la comprobación manual del entorno operativo siguen siendo el único camino
+  operativo.
 - La duración guardada es el intervalo **observado** entre apertura y cierre; no
   se infiere la hora exacta de la caída.
 - No identifica la causa de una interrupción (internet, GPS, batería, Android).
@@ -333,25 +334,31 @@ Reglas:
 - La migración `0002` conserva la memoria existente y no fabrica incidentes
   históricos.
 
-#### 3.2.1 Preparación del despliegue remoto (D1 creada, Worker sin desplegar)
+#### 3.2.1 Despliegue remoto (Worker publicado, vigilancia apagada)
 
 La preparación local se validó con pruebas automatizadas, typecheck, lint, build
 y `wrangler deploy --env production --dry-run`, que no autentica ni crea
 recursos. Con autorización explícita se creó la D1 remota
-`pulso-memory-production` en la cuenta confirmada (plan Workers Free) y se
-aplicaron sus dos migraciones; **el Worker sigue sin desplegar, no hay cron
-activo, Hosting no se publicó y no se consultó el Firebase operativo**.
+`pulso-memory-production` en la cuenta confirmada (plan Workers Free), se
+aplicaron sus dos migraciones y se habilitó el subdominio `workers.dev`
+(`elburrito`). Después se confirmó el origen de Central, se completó
+`PULSO_CENTRAL_ORIGIN` y se desplegó el Worker en
+**`https://pulso-monitor.elburrito.workers.dev`**, que sirve la API en
+`/api/pulso`. **La vigilancia sigue desactivada (`PULSO_SCHEDULE_ENABLED=false`),
+no hay cron (`crons: []`), Hosting no se publicó y no se consultó el Firebase
+operativo**; por eso la verificación autenticada con un token de administrador
+sigue pendiente.
 
 Configuración del entorno `production` en `monitor/worker/wrangler.jsonc`:
 
 | Ámbito | Valor | Estado |
 |--------|-------|--------|
-| Worker | `name: pulso-monitor`, `workers_dev: true`, `preview_urls: false` | Cuenta confirmada; falta el subdominio al desplegar |
-| D1 | Binding `PULSO_DB` → `pulso-memory-production`, `database_id: 47e5664d-f9bd-435a-8f77-f4f8873c69cb`, `migrations_dir: migrations` | Creada en la región ENAM; migraciones `0001` y `0002` aplicadas |
-| Cron | `triggers.crons: []` | Vacío; no hay ejecución programada |
+| Worker | `name: pulso-monitor`, `workers_dev: true`, `preview_urls: false` | Desplegado en `https://pulso-monitor.elburrito.workers.dev`; previews deshabilitadas |
+| D1 | Binding `PULSO_DB` → `pulso-memory-production`, `database_id: 47e5664d-f9bd-435a-8f77-f4f8873c69cb`, `migrations_dir: migrations` | Creada en la región ENAM; migraciones `0001` y `0002` aplicadas; en uso por el Worker desplegado |
+| Cron | `triggers.crons: []` | Vacío; comprobado por API tras el despliegue |
 | Ejecución | `PULSO_EXECUTION: cloudflare`, `PULSO_LOCAL_ONLY: false`, `PULSO_MEMORY: d1` | Definido |
-| Interruptor | `PULSO_SCHEDULE_ENABLED: false` | Apagado |
-| Origen de Central | `PULSO_CENTRAL_ORIGIN` | Vacío hasta conocer el origen HTTPS real |
+| Interruptor | `PULSO_SCHEDULE_ENABLED: false` | Apagado; comprobado por API tras el despliegue |
+| Origen de Central | `PULSO_CENTRAL_ORIGIN: https://burritounmsm.web.app` | Confirmado y configurado |
 | Fuente | `RTDB_MODE: operative-public`, `BUS_ID: AHK-459`, origen y namespace `burritounmsm-default-rtdb` | Definido |
 | Umbrales | `180000` ms, `2` confirmaciones, desfase futuro `5000` ms, timeout de lectura `5000` ms | Definido |
 | Autorización | `PULSO_ADMIN_PROJECT_ID`, `PULSO_ADMIN_RTDB_ORIGIN` y `PULSO_ADMIN_RTDB_NAMESPACE` de `burritounmsm` | Definido |
@@ -361,6 +368,22 @@ tablas (`tracking_state`, `tracking_observations`, `tracking_incidents`) existen
 con cero filas, junto con sus índices; `PRAGMA quick_check` devolvió `ok` y
 `foreign_key_check` no reportó violaciones. No se importaron datos de las pruebas
 locales.
+
+**Despliegue y verificaciones HTTPS.** `wrangler deploy --env production`
+publicó solo el Worker `pulso-monitor`. La API de Cloudflare confirmó el
+subdominio `elburrito`, el binding `PULSO_DB` con el UUID indicado,
+`PULSO_SCHEDULE_ENABLED=false`, el origen de Central configurado y
+`triggers.crons` vacío. Sobre la URL pública, con HTTPS válido, pasaron diez
+comprobaciones: `GET` sin token responde `401 authentication-required` (con y sin
+`Origin`); un token malformado responde `401 invalid-token`; un origen ajeno
+responde `403 access-denied` sin cabecera CORS; el preflight de Central para
+`GET` + `Authorization` responde `204` con el origen exacto; preflights con
+`POST` o cabeceras extra y peticiones `POST` se rechazan (`403` y `405`);
+`/evaluate` responde `403 local-only` incluso con `X-Pulso-Local: 1`; las
+respuestas usan `cache-control: no-store` y `x-content-type-options: nosniff`, sin
+credenciales CORS. No se envió ningún token de Firebase válido ni se consultó el
+Firebase operativo. Después de las pruebas, las tres tablas D1 seguían con cero
+filas y sin escrituras.
 
 **Selección de modo.** `executionConfig.ts` interpreta `PULSO_EXECUTION`
 ausente o `local` como ejecución local; `cloudflare` habilita el modo remoto;
@@ -382,8 +405,8 @@ interruptor apagado, el handler programado registra `{"status":"schedule-disable
 y retorna sin consultar ni escribir. Con `crons` vacío no hay invocación
 programada aunque el interruptor esté encendido. Para desactivar el cron hay que
 declarar `crons: []` de forma explícita; omitir la clave no elimina un trigger ya
-publicado. La activación de ambos exige despliegue y autorización, y un cambio
-de cron no se propaga de inmediato.
+publicado. La activación de ambos exige autorización explícita y un nuevo
+despliegue de la configuración, y un cambio de cron no se propaga de inmediato.
 
 **API remota.** `GET /api/pulso` conserva el mismo contrato y la misma
 autorización: `Authorization: Bearer` con el ID token de Central, verificado por
@@ -405,24 +428,27 @@ del panel. Los modos locales siguen usando el proxy `/api/pulso` sin cargar el
 `.env` operativo. La petición reutiliza el token de la sesión, sin cookies ni
 redirecciones, y no define una segunda autenticación.
 
-**Configuraciones reales pendientes:** origen HTTPS exacto de Central para
-`PULSO_CENTRAL_ORIGIN`; origen HTTPS del Worker (subdominio `workers.dev`) para
-`VITE_PULSO_API_ORIGIN`.
+**Valores resueltos y pendientes.** `PULSO_CENTRAL_ORIGIN` ya está configurado
+con `https://burritounmsm.web.app`, y el Worker responde en
+`https://pulso-monitor.elburrito.workers.dev`, valor que la build de Central debe
+usar en `VITE_PULSO_API_ORIGIN`. Con autorización explícita quedan pendientes la
+publicación de Central y la activación del interruptor y del cron.
 
-**Orden previsto de despliegue y activación** (cada paso requiere autorización
-explícita; los pasos 1 y 2 ya se ejecutaron):
+**Orden de despliegue y activación** (cada paso requiere autorización explícita;
+los pasos 1 a 4 se ejecutaron, salvo la prueba con token de administrador):
 
 1. Crear la D1 `pulso-memory-production` en la cuenta confirmada (hecho).
 2. Aplicar las migraciones `0001` y `0002` en la D1 remota (hecho).
-3. Completar `PULSO_CENTRAL_ORIGIN` en `env.production`; mantener
-   `PULSO_SCHEDULE_ENABLED=false` y `crons: []`.
-4. Desplegar el Worker y verificar la API remota con un token de administrador.
-5. Compilar Central con `VITE_PULSO_API_ORIGIN` y publicar Hosting.
+3. Completar `PULSO_CENTRAL_ORIGIN` en `env.production`, conservando
+   `PULSO_SCHEDULE_ENABLED=false` y `crons: []` (hecho).
+4. Desplegar el Worker (hecho) y verificar la API remota sin token y el CORS
+   (hecho). La verificación con un token de administrador sigue pendiente.
+5. Compilar Central con `VITE_PULSO_API_ORIGIN` y publicar Hosting (pendiente).
 6. Activar el interruptor y el cron de un minuto; comprobar la vigilancia y el
-   cierre de incidentes en la pantalla.
+   cierre de incidentes en la pantalla (pendiente).
 7. Verificar que la actualización funciona con la computadora apagada, que el
    tracking consultado es el operativo (no el emulado) y que las consultas sin
-   autorización siguen bloqueadas.
+   autorización siguen bloqueadas (pendiente).
 
 La integración con Central es la próxima prioridad. Las notificaciones externas
 quedan pospuestas (ROADMAP §2).
