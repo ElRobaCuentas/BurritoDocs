@@ -226,8 +226,9 @@ La estructura de archivos relevante está centralizada en §6.
 
 Worker de Cloudflare en `AdminWeb/monitor/` que observa el tracking publicado en
 RTDB y comprueba su estado. No escribe en RTDB y no modifica aplicaciones. Hoy se
-ejecuta y verifica solo en local; el entorno remoto está preparado, pero **no
-desplegado** (§3.2.1). Su acceso local tiene dos vías
+ejecuta y verifica solo en local; el entorno remoto está preparado —D1 remota
+creada y migrada—, pero el Worker **no está desplegado** (§3.2.1). Su acceso local
+tiene dos vías
 (`monitor/worker/src/index.ts`):
 
 - **Manual:** `GET /evaluate` solo responde en loopback con la cabecera
@@ -332,20 +333,21 @@ Reglas:
 - La migración `0002` conserva la memoria existente y no fabrica incidentes
   históricos.
 
-#### 3.2.1 Preparación del despliegue remoto (implementada y verificada en local, sin desplegar)
+#### 3.2.1 Preparación del despliegue remoto (D1 creada, Worker sin desplegar)
 
-El código y la configuración del entorno `production` están preparados y
-verificados localmente; **no hay D1 remota, Worker desplegado, cron activo,
-Hosting publicado ni consultas al Firebase operativo**. La preparación se validó
-con pruebas automatizadas, typecheck, lint, build y
-`wrangler deploy --env production --dry-run`, que no autentica ni crea recursos.
+La preparación local se validó con pruebas automatizadas, typecheck, lint, build
+y `wrangler deploy --env production --dry-run`, que no autentica ni crea
+recursos. Con autorización explícita se creó la D1 remota
+`pulso-memory-production` en la cuenta confirmada (plan Workers Free) y se
+aplicaron sus dos migraciones; **el Worker sigue sin desplegar, no hay cron
+activo, Hosting no se publicó y no se consultó el Firebase operativo**.
 
-Configuración prevista en `monitor/worker/wrangler.jsonc` (`env.production`):
+Configuración del entorno `production` en `monitor/worker/wrangler.jsonc`:
 
 | Ámbito | Valor | Estado |
 |--------|-------|--------|
-| Worker | `name: pulso-monitor`, `workers_dev: true`, `preview_urls: false` | Definido; falta confirmar cuenta y subdominio |
-| D1 | Binding `PULSO_DB` → `pulso-memory-production`, `migrations_dir: migrations` | Definido; `database_id` vacío hasta crear la base |
+| Worker | `name: pulso-monitor`, `workers_dev: true`, `preview_urls: false` | Cuenta confirmada; falta el subdominio al desplegar |
+| D1 | Binding `PULSO_DB` → `pulso-memory-production`, `database_id: 47e5664d-f9bd-435a-8f77-f4f8873c69cb`, `migrations_dir: migrations` | Creada en la región ENAM; migraciones `0001` y `0002` aplicadas |
 | Cron | `triggers.crons: []` | Vacío; no hay ejecución programada |
 | Ejecución | `PULSO_EXECUTION: cloudflare`, `PULSO_LOCAL_ONLY: false`, `PULSO_MEMORY: d1` | Definido |
 | Interruptor | `PULSO_SCHEDULE_ENABLED: false` | Apagado |
@@ -353,6 +355,12 @@ Configuración prevista en `monitor/worker/wrangler.jsonc` (`env.production`):
 | Fuente | `RTDB_MODE: operative-public`, `BUS_ID: AHK-459`, origen y namespace `burritounmsm-default-rtdb` | Definido |
 | Umbrales | `180000` ms, `2` confirmaciones, desfase futuro `5000` ms, timeout de lectura `5000` ms | Definido |
 | Autorización | `PULSO_ADMIN_PROJECT_ID`, `PULSO_ADMIN_RTDB_ORIGIN` y `PULSO_ADMIN_RTDB_NAMESPACE` de `burritounmsm` | Definido |
+
+**Verificación remota de la D1.** Ambas migraciones figuran aplicadas y las tres
+tablas (`tracking_state`, `tracking_observations`, `tracking_incidents`) existen
+con cero filas, junto con sus índices; `PRAGMA quick_check` devolvió `ok` y
+`foreign_key_check` no reportó violaciones. No se importaron datos de las pruebas
+locales.
 
 **Selección de modo.** `executionConfig.ts` interpreta `PULSO_EXECUTION`
 ausente o `local` como ejecución local; `cloudflare` habilita el modo remoto;
@@ -383,30 +391,30 @@ Firebase contra `/administradores/{uid}` con las reglas existentes, sin
 contraseña ni login adicional. En remoto solo acepta HTTPS y `GET` sin query; si
 la petición trae `Origin`, debe coincidir exactamente con `PULSO_CENTRAL_ORIGIN`.
 `OPTIONS` responde 204 para `GET` + `Authorization` y los errores dirigidos a un
-origen permitido incluyen CORS. La lectura sigue siendo exclusivamente `SELECT` en D1: no ejecuta el
-evaluador ni consulta el tracking. Por eso la pantalla puede leer lo guardado
-aunque el cron esté apagado; sin comprobaciones previas devuelve `no-data`.
-`/evaluate` continúa siendo local: en remoto responde `403 local-only`.
+origen permitido incluyen CORS. La lectura sigue siendo exclusivamente `SELECT`
+en D1: no ejecuta el evaluador ni consulta el tracking. Por eso la pantalla puede
+leer lo guardado aunque el cron esté apagado; sin comprobaciones previas devuelve
+`no-data`. `/evaluate` continúa siendo local: en remoto responde `403 local-only`.
 
 **Conexión de Central.** El cliente de la pantalla
 (`src/shared/config/env.ts`, `pulso_service.ts`) lee `VITE_PULSO_API_ORIGIN`,
 valida que sea un origen HTTPS sin ruta, credenciales, query ni fragmento, y que
-no sea loopback, y compone `${origen}/api/pulso`. Si la variable falta en una build de producción,
-el error aparece solo al abrir PULSO y no bloquea el resto del panel. Los modos
-locales siguen usando el proxy `/api/pulso` sin cargar el `.env` operativo. La
-petición reutiliza el token de la sesión, sin cookies ni redirecciones, y no
-define una segunda autenticación.
+no sea loopback, y compone `${origen}/api/pulso`. Si la variable falta en una
+build de producción, el error aparece solo al abrir PULSO y no bloquea el resto
+del panel. Los modos locales siguen usando el proxy `/api/pulso` sin cargar el
+`.env` operativo. La petición reutiliza el token de la sesión, sin cookies ni
+redirecciones, y no define una segunda autenticación.
 
-**Configuraciones reales pendientes:** UUID de la D1 remota; origen HTTPS exacto
-de Central para `PULSO_CENTRAL_ORIGIN`; origen HTTPS del Worker para
-`VITE_PULSO_API_ORIGIN`; cuenta y subdominio de Cloudflare.
+**Configuraciones reales pendientes:** origen HTTPS exacto de Central para
+`PULSO_CENTRAL_ORIGIN`; origen HTTPS del Worker (subdominio `workers.dev`) para
+`VITE_PULSO_API_ORIGIN`.
 
 **Orden previsto de despliegue y activación** (cada paso requiere autorización
-explícita; ninguno se ejecutó):
+explícita; los pasos 1 y 2 ya se ejecutaron):
 
-1. Iniciar sesión en Cloudflare y crear la D1 `pulso-memory-production`.
-2. Aplicar las migraciones `0001` y `0002` en la D1 remota.
-3. Completar `database_id` y `PULSO_CENTRAL_ORIGIN` en `env.production`; mantener
+1. Crear la D1 `pulso-memory-production` en la cuenta confirmada (hecho).
+2. Aplicar las migraciones `0001` y `0002` en la D1 remota (hecho).
+3. Completar `PULSO_CENTRAL_ORIGIN` en `env.production`; mantener
    `PULSO_SCHEDULE_ENABLED=false` y `crons: []`.
 4. Desplegar el Worker y verificar la API remota con un token de administrador.
 5. Compilar Central con `VITE_PULSO_API_ORIGIN` y publicar Hosting.
