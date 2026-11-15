@@ -274,12 +274,20 @@ exacto); sin autorización configurada la API falla cerrado.
 La pantalla `/pulso` de Central (`src/features/pulso/`) consume esta API con el
 ID token de la sesión existente, sin segunda autenticación ni pantalla de login
 adicional. Entra por el menú y el `AppShell` existentes, consulta al entrar y
-con su botón Actualizar (sin sondeo de la API ni comprobaciones), y distingue
-carga, `no-data`, ausencia de incidentes, datos antiguos, error y denegado.
-Muestra el estado observado, la última comprobación (su antigüedad avanza con
-el reloj local sin reclasificar el seguimiento), los incidentes activos y los
-últimos 20; la autorización real sigue siendo la del Worker y la UI no la
-sustituye.
+cada 60 s mientras sigue montada, y distingue carga, `no-data`, ausencia de
+incidentes, datos antiguos, error y denegado. El botón Actualizar dispara la
+misma consulta, y un candado de vuelo impide que el temporizador y el botón se
+solapen. Al salir se cancelan el intervalo y la consulta pendiente
+(`AbortController`), y las respuestas tardías se descartan. El refresco solo
+repite `GET /api/pulso`: no ejecuta comprobaciones ni escribe en D1. Muestra el
+estado observado, la última comprobación (su antigüedad avanza con el reloj
+local sin reclasificar el seguimiento), los incidentes activos y los últimos 20;
+la autorización real sigue siendo la del Worker y la UI no la sustituye. Un
+fallo de consulta conserva los datos anteriores con su marca de tiempo y avisa
+que no se pudo confirmar si hay comprobaciones nuevas; una denegación 401/403
+retira los datos; el éxito limpia el aviso. Ninguna actualización reinicia la
+antigüedad ni rejuvenece la comprobación, y la advertencia de datos antiguos se
+mantiene incluso con el error visible.
 
 | Componente | Archivo | Rol |
 |------------|---------|-----|
@@ -407,6 +415,22 @@ errores de acceso ni de conectividad. No se solicitaron ni registraron
 contraseñas o tokens, y las tres tablas D1 siguieron con cero filas. La
 autorización leyó `/administradores/{uid}` del proyecto `burritounmsm`, pero no
 se consultó la ubicación operativa del bus.
+
+**Refresco automático de la pantalla.** Se agregó la consulta periódica cada
+60 s descrita en §3.2 y se verificó en local antes de publicar: lint y build
+aprobados, 26 pruebas de cliente (14 de contrato, 4 de presentación, 2 de build
+y 6 de navegador con reloj controlado, `StrictMode` y HTTP simulado) y 8 de
+integración local con Auth, RTDB y D1 emulados. Las pruebas de navegador cubren
+la consulta a los 60 s y la ausencia a los 59,99 s, el botón manual sin
+solapamiento, la conservación del DOM, la antigüedad sin rejuvenecer, el error
+que conserva los datos previos y luego se recupera, la retirada de datos tras
+una denegación, la cancelación al desmontar con temporizadores limpios y las
+respuestas tardías ignoradas. La publicación fue solo de Hosting: release
+`1794782963690000`, versión `3b69ad434e3d33d7`, `2026-11-15T22:49:23.690Z`; la
+versión live previa `1952a1f1e616bfa3` (release `1794779471348000`) sirve de
+rollback. Los archivos publicados coinciden byte a byte con `dist/` (SHA-256) y
+`/pulso` resuelve a `index.html`. Queda pendiente la comprobación manual con una
+sesión administrativa real en producción (recarga forzada y espera de 60 s).
 
 **Selección de modo.** `executionConfig.ts` interpreta `PULSO_EXECUTION`
 ausente o `local` como ejecución local; `cloudflare` habilita el modo remoto;
@@ -749,7 +773,7 @@ pertenecen al README de cada aplicación; esta tabla es el mapa de arquitectura.
 | `src/features/admin/utils/turnoDraft.ts` | Estado de edición de turnos |
 | `src/features/pulso/services/pulso_service.ts` | Cliente de `GET /api/pulso` con el token de sesión y validación del contrato |
 | `src/features/pulso/pulsoPresentation.ts` | Etiquetas y formato es-PE de la pantalla PULSO |
-| `src/features/pulso/screen/PulsoScreen.tsx` | Vista `/pulso`: estados diferenciados y refresco manual |
+| `src/features/pulso/screen/PulsoScreen.tsx` | Vista `/pulso`: estados diferenciados y refresco automático cada 60 s con Actualizar manual |
 | `src/shared/config/env.ts` | Validación de `VITE_FIREBASE_*` y del origen HTTPS opcional de PULSO (`VITE_PULSO_API_ORIGIN`) |
 | `src/shared/config/firebase.ts` | Instancia de Firebase (Firebase JS SDK) |
 | `src/shared/utils/dni.ts` | Normalización y validación de DNI |
