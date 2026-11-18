@@ -85,7 +85,7 @@ nodo administrativo, del índice de conductores o de las reglas de cada path.
 | El Burrito | Crea feedback | `/comentarios` |
 | AdminWeb | CRUD de configuración y lectura de listas | `/choferes`, `/buses`, `/asignaciones`, `/administradores` |
 | AdminWeb | Inicializa o elimina el nodo de un bus | `/ubicacion_buses/{placa}` |
-| AdminWeb (PULSO) | Lee el tracking por HTTP público para evaluar el seguimiento (comprobación manual o programada en local) | REST `/ubicacion_buses/{busId}.json` |
+| AdminWeb (PULSO) | El Worker lee el tracking por HTTP público cada minuto en producción; conserva modos locales de prueba | REST `/ubicacion_buses/{busId}.json` |
 | AdminWeb (PULSO) | Verifica el rol de la sesión de Central al autorizar su API de lectura | REST `/administradores/{uid}.json` |
 
 ### Autenticación y autorización
@@ -224,343 +224,41 @@ La estructura de archivos relevante está centralizada en §6.
 
 ### 3.2 PULSO (monitor de seguimiento)
 
-Worker de Cloudflare en `AdminWeb/monitor/` que observa el tracking publicado en
-RTDB y comprueba su estado. No escribe en RTDB y no modifica aplicaciones. El
-Worker remoto está desplegado en `production` con D1 remota y vigilancia
-automática cada minuto desde el `2026-11-15` (§3.2.1). Su acceso local tiene dos vías
-(`monitor/worker/src/index.ts`):
+PULSO es el monitor técnico interno, implementado en `AdminWeb/monitor/`, que
+observa las publicaciones de BurritoDriverApp sin intervenir en el pipeline del
+mapa de El Burrito ni escribir en RTDB.
 
-- **Manual:** `GET /evaluate` solo responde en loopback con la cabecera
-  `X-Pulso-Local: 1`.
-- **Programada local:** `runScheduledCheck` reutiliza el mismo ciclo del acceso
-  manual (evaluador, D1 e incidentes) y exige memoria D1
-  (`PULSO_MEMORY: 'd1-local'`); rechaza el modo operativo con
-  `operative-manual-only`. El entorno `memory-local` de `wrangler.jsonc` declara
-  el cron de un minuto (`* * * * *`); `production` declara el mismo cron
-  (§3.2.1).
-  Wrangler `dev` no ejecuta el reloj por sí solo: en desarrollo se dispara con
-  `npm run watch:local` (`monitor/worker/scripts/watch-local.ts`), que invoca la
-  entrada programada local de Wrangler cada ~60 s y se detiene con Ctrl+C. Un
-  error del handler (D1 o configuración) falla la ejecución con un código
-  sanitizado; no se confunde con un incidente de fuente, que se guarda con
-  normalidad.
+```text
+BurritoDriverApp → RTDB → Worker de Cloudflare (cron) → D1
+                                                       ↓
+                                  API administrativa → Central
+```
 
-Además del ciclo de comprobación, el Worker expone para Central una API de solo
-lectura: `GET /api/pulso` (`monitor/worker/src/pulsoRead.ts`). En local somete a
-la misma frontera que `/evaluate` (loopback y `PULSO_LOCAL_ONLY`); el entorno
-remoto exige HTTPS, el origen exacto de Central (`PULSO_CENTRAL_ORIGIN`) y CORS
-limitado a `GET` con `Authorization`, con `OPTIONS` 204 para el preflight.
-Autoriza con el ID token de la sesión de Central vía `Authorization: Bearer`
-(`monitor/worker/src/adminAuthorization.ts`): prevalida la forma del token y
-delega la verificación a Firebase leyendo `REST /administradores/{uid}.json`
-con `auth={token}`, igual que hace `existeAdministrador` en el panel; la
-existencia del nodo habilita la lectura y su ausencia o rechazo del token
-devuelven `403 access-denied`. La respuesta proviene exclusivamente de D1 en un
-solo batch de `SELECT` (estado con su observación enlazada por `last_check_id`,
-incidentes activos y los últimos 20 incidentes): **no ejecuta el evaluador ni
-consulta el tracking de RTDB**; consultar información guardada y ejecutar una
-comprobación son operaciones distintas. Devuelve `no-data` u `observed` con
-`observedState` (incluye `observedTripStartedAt`, el inicio del período activo
-observado o `null`), `lastCheck` (antigüedad de la comprobación guardada, con
-`freshness` informativo según el umbral) e incidentes; los errores distinguen
-`authentication-required`/`invalid-token` (401), `access-denied`/`local-only`
-(403) y `authorization-not-configured`/`authorization-unavailable`/
-`read-not-configured`/`read-failed` (503), y la respuesta no expone
-coordenadas, perfiles, SQL ni credenciales. Requiere la memoria D1 ya descrita
-y `PULSO_ADMIN_PROJECT_ID`, `PULSO_ADMIN_RTDB_ORIGIN` y
-`PULSO_ADMIN_RTDB_NAMESPACE` (solo loopback `demo-*` o el destino operativo
-exacto); sin autorización configurada la API falla cerrado.
+El Worker comprueba el bus configurado cada minuto y persiste estado e
+incidentes. Central consulta `GET /api/pulso` con la sesión administrativa
+existente; la API autoriza mediante Firebase y lee D1, sin evaluar ni consultar
+el tracking. El refresco del navegador y el cron son procesos independientes.
+Se conservan modos locales de comprobación manual y programada para desarrollo.
 
-La pantalla `/pulso` de Central (`src/features/pulso/`) consume esta API con el
-ID token de la sesión existente, sin segunda autenticación ni pantalla de login
-adicional. Entra por el menú y el `AppShell` existentes, consulta al entrar y
-cada 60 s mientras sigue montada, y distingue carga, `no-data`, ausencia de
-incidentes, datos antiguos, error y denegado. El botón Actualizar dispara la
-misma consulta, y un candado de vuelo impide que el temporizador y el botón se
-solapen. Al salir se cancelan el intervalo y la consulta pendiente
-(`AbortController`), y las respuestas tardías se descartan. El refresco solo
-repite `GET /api/pulso`: no ejecuta comprobaciones ni escribe en D1. Muestra el
-estado observado, el inicio del período activo observado y su duración estimada,
-la última comprobación (su antigüedad avanza con el reloj
-local sin reclasificar el seguimiento), los incidentes activos y los últimos 20;
-la autorización real sigue siendo la del Worker y la UI no la sustituye. Un
-fallo de consulta conserva los datos anteriores con su marca de tiempo y avisa
-que no se pudo confirmar si hay comprobaciones nuevas; una denegación 401/403
-retira los datos; el éxito limpia el aviso. Ninguna actualización reinicia la
-antigüedad ni rejuvenece la comprobación, y la advertencia de datos antiguos se
-mantiene incluso con el error visible.
-
-**Inicio observado del recorrido (`migrations/0003_tracking_observed_start.sql`).**
-`tracking_state.observed_trip_started_at` guarda el inicio del período activo
-observado, fuera de `prior_state_json`, por lo que el evaluador y `state_version`
-no cambian. Se escribe con la hora de la comprobación (`evaluated_at`) al observar
-el primer `isActive:true` o una transición observada `false → true`; se conserva
-ante interrupciones, recuperaciones, fuente inaccesible, relevos del Worker y
-reinicios; y se limpia (`NULL`) solo al observar `isActive:false`. La API lo
-expone como `observedState.observedTripStartedAt` y Central muestra «Inicio
-observado del recorrido (Lima)» y «Tiempo de recorrido observado». Es la primera
-observación activa de PULSO, no la hora de INICIAR en BurritoDriverApp ni tiempo
-continuo de transmisión GPS: la duración incluye cortes de conexión y, si no se
-observó el `false` intermedio, dos recorridos consecutivos pueden unirse. Un
-período preexistente sin inicio confiable muestra «Sin información disponible» /
-«No calculable» —nunca se fecha desde el despliegue— y uno inactivo, «No aplica».
-Con datos antiguos, error de consulta, fuente distinta de `ok` o declaración
-activa no confirmada, la duración se limita a la última comprobación guardada y se
-rotula «(hasta la última comprobación guardada)».
-
-| Componente | Archivo | Rol |
-|------------|---------|-----|
-| Evaluador | `monitor/src/domain/evaluateTracking.ts` | Clasifica la publicación (fresca, desactualizada, desconocida), la interrupción y la recuperación |
-| Cliente RTDB | `monitor/worker/src/firebaseRtdb.ts` | GET con timeout; distingue errores sin atribuir causa |
-| Adaptador | `monitor/worker/src/toTrackingObservation.ts` | Acepta solo los seis campos publicados hoy; no inventa telemetría futura |
-| Memoria | `monitor/worker/src/trackingStore.ts` + `migrations/` | Snapshot, historial e incidentes en D1 (local o remota) |
-| Incidentes | `monitor/worker/src/trackingIncidents.ts` | Apertura, actualización y cierre transaccional |
-| Ejecución | `monitor/worker/src/executionConfig.ts` | Distingue local de remoto, valida la configuración completa y falla cerrado antes de leer Firebase o escribir en D1 |
-| Programación | `monitor/worker/src/index.ts` (`runScheduledCheck` + `scheduled`) | Comprobación programada que reutiliza el ciclo manual; en remoto exige el interruptor habilitado |
-| Reloj local | `monitor/worker/scripts/watch-local.ts` | Dispara la entrada programada de Wrangler cada minuto en desarrollo |
-| API de lectura | `monitor/worker/src/pulsoRead.ts` + `adminAuthorization.ts` | `GET /api/pulso`: `SELECT` de D1 y autorización por token de sesión; no evalúa ni consulta el tracking de RTDB |
-| Pantalla Central | `src/features/pulso/` (`PulsoScreen.tsx`, `pulso_service.ts`) | Consume `GET /api/pulso` con el token de la sesión; no evalúa ni consulta el tracking de RTDB |
-
-Umbrales vigentes (`monitor/worker/wrangler.jsonc`, entornos `operative` y
-`production`): una publicación está desactualizada con antigüedad **mayor** a
-180000 ms (3 min) y la recuperación se confirma con **2** publicaciones válidas y
-distintas.
-
-#### Incidentes del MVP (`migrations/0002_tracking_incidents.sql`)
-
-| Tipo | Se abre | Se cierra |
-|------|---------|-----------|
-| `tracking-interrupted` (seguimiento interrumpido) | Durante vigilancia activa, cuando la antigüedad de publicación supera el umbral | `publications-recovered` al confirmar la recuperación del evaluador, o `tracking-inactive` al observar `isActive:false` (sin registrar recuperación ficticia) |
-| `source-unavailable` (fuente inaccesible) | Durante vigilancia activa, cuando falla la consulta a Firebase | `source-accessible` al volver a poder leer, aunque la publicación siga desactualizada |
-
-Reglas:
-
-- La vigilancia (`monitoring_active`) comienza al observar `isActive:true` y se
-  desactiva solo al observar `isActive:false`. Datos ausentes, inválidos o una
-  fuente inaccesible la conservan. No hay horarios de jornada.
-- Un problema continuo es un único incidente por fuente, bus y tipo (índice
-  único parcial sobre incidentes abiertos); ambos tipos pueden coexistir. Cada
-  comprobación continua incrementa `check_count` y `updated_at`.
-- Estado, historial, poda e incidentes se escriben en un mismo batch D1 con CAS
-  (`revision` + `last_check_id`); una comprobación perdedora revierte todo
-  (`memory-conflict`). El historial de observaciones se poda a los 7 días; los
-  incidentes no se podan.
-
-#### Límites aceptados para el MVP
-
-- La vigilancia programada corre en Cloudflare cada minuto con
-  `crons: ["* * * * *"]` y `PULSO_SCHEDULE_ENABLED: "true"` desde el
-  `2026-11-15`; la simulación local (`memory-local` y `npm run watch:local`) se
-  conserva para desarrollo.
-- La duración guardada es el intervalo **observado** entre apertura y cierre; no
-  se infiere la hora exacta de la caída.
-- No identifica la causa de una interrupción (internet, GPS, batería, Android).
-- Sin observar `isActive:false` no puede deducir por sí mismo el fin de la
-  jornada.
-- La migración `0002` conserva la memoria existente y no fabrica incidentes
-  históricos.
-- La migración `0003` agrega la columna del inicio observado sin reescribir el
-  historial ni fechar períodos activos anteriores.
+La referencia principal es [PULSO.md](PULSO.md): funcionamiento, estados e
+incidentes (§3–5), memoria y migraciones (§6), indicadores y datos antiguos (§7),
+operación (§8), evidencia del MVP (§9) y límites (§10). Los contratos RTDB siguen
+en `FIREBASE_SCHEMA.md`; los comandos de desarrollo, pruebas y despliegue, en el
+[README de AdminWeb](https://github.com/ElRobaCuentas/AdminWeb/blob/main/README.md#monitor-pulso-local-y-despliegue-remoto).
 
 #### 3.2.1 Despliegue remoto e integración con Central (vigilancia activa)
 
-La preparación local se validó con pruebas automatizadas, typecheck, lint, build
-y `wrangler deploy --env production --dry-run`, que no autentica ni crea
-recursos. Con autorización explícita se creó la D1 remota
-`pulso-memory-production` en la cuenta confirmada (plan Workers Free), se
-aplicaron sus dos migraciones y se habilitó el subdominio `workers.dev`
-(`elburrito`). Después se confirmó el origen de Central, se completó
-`PULSO_CENTRAL_ORIGIN` y se desplegó el Worker en
-**`https://pulso-monitor.elburrito.workers.dev`**, que sirve la API en
-`/api/pulso`. Ese primer despliegue no publicó Hosting ni consultó la ubicación
-operativa del bus; después se publicó Central y se completó la verificación
-autenticada (más abajo). La vigilancia se activó el `2026-11-15` (más abajo).
+El MVP está implementado y publicado con vigilancia automática en Cloudflare y
+memoria D1; Central usa la API remota. Fue validado operativamente el
+**18/11/2026**, incluyendo interrupción, persistencia sin duplicados, recuperación,
+detención e inicio/duración observados.
 
-Configuración del entorno `production` en `monitor/worker/wrangler.jsonc`:
-
-| Ámbito | Valor | Estado |
-|--------|-------|--------|
-| Worker | `name: pulso-monitor`, `workers_dev: true`, `preview_urls: false` | Desplegado en `https://pulso-monitor.elburrito.workers.dev`; previews deshabilitadas |
-| D1 | Binding `PULSO_DB` → `pulso-memory-production`, `database_id: 47e5664d-f9bd-435a-8f77-f4f8873c69cb`, `migrations_dir: migrations` | Creada en la región ENAM; migraciones `0001`, `0002` y `0003` aplicadas; en uso por el Worker desplegado |
-| Cron | `triggers.crons: ["* * * * *"]` | Activo; comprobado por API y con ejecuciones reales |
-| Ejecución | `PULSO_EXECUTION: cloudflare`, `PULSO_LOCAL_ONLY: false`, `PULSO_MEMORY: d1` | Definido |
-| Interruptor | `PULSO_SCHEDULE_ENABLED: "true"` | Encendido; comprobado por API y con ejecuciones reales |
-| Origen de Central | `PULSO_CENTRAL_ORIGIN: https://burritounmsm.web.app` | Confirmado y configurado |
-| Fuente | `RTDB_MODE: operative-public`, `BUS_ID: AHK-459`, origen y namespace `burritounmsm-default-rtdb` | Definido |
-| Umbrales | `180000` ms, `2` confirmaciones, desfase futuro `5000` ms, timeout de lectura `5000` ms | Definido |
-| Autorización | `PULSO_ADMIN_PROJECT_ID`, `PULSO_ADMIN_RTDB_ORIGIN` y `PULSO_ADMIN_RTDB_NAMESPACE` de `burritounmsm` | Definido |
-
-**Verificación remota de la D1.** El despliegue inicial aplicó `0001` y `0002` y
-dejó las tres tablas (`tracking_state`, `tracking_observations`,
-`tracking_incidents`) con cero filas, junto con sus índices; `PRAGMA quick_check`
-devolvió `ok` y `foreign_key_check` no reportó violaciones. No se importaron datos
-de las pruebas locales. Después se aplicó `0003` (abajo).
-
-**Despliegue y verificaciones HTTPS.** `wrangler deploy --env production`
-publicó solo el Worker `pulso-monitor`. En ese despliegue inicial la API de
-Cloudflare confirmó el subdominio `elburrito`, el binding `PULSO_DB` con el UUID
-indicado, `PULSO_SCHEDULE_ENABLED=false`, el origen de Central configurado y
-`triggers.crons` vacío. Sobre la URL pública, con HTTPS válido, pasaron diez
-comprobaciones: `GET` sin token responde `401 authentication-required` (con y sin
-`Origin`); un token malformado responde `401 invalid-token`; un origen ajeno
-responde `403 access-denied` sin cabecera CORS; el preflight de Central para
-`GET` + `Authorization` responde `204` con el origen exacto; preflights con
-`POST` o cabeceras extra y peticiones `POST` se rechazan (`403` y `405`);
-`/evaluate` responde `403 local-only` incluso con `X-Pulso-Local: 1`; las
-respuestas usan `cache-control: no-store` y `x-content-type-options: nosniff`, sin
-credenciales CORS. No se envió ningún token de Firebase válido ni se consultó la
-ubicación operativa del bus. Después de las pruebas, las tres tablas D1 seguían
-con cero filas y sin escrituras.
-
-**Publicación de Central y validación administrativa.** Con autorización
-explícita se compiló Central con `VITE_PULSO_API_ORIGIN` —configurada
-manualmente en `AdminWeb/.env`, que no se leyó ni modificó— y se publicó solo
-Hosting con `firebase deploy --only hosting --project burritounmsm`. Antes del
-despliegue se aprobaron el lint, las 20 pruebas de cliente y las 8 de integración
-local; la auditoría del build confirmó que la aplicación resuelve
-`https://pulso-monitor.elburrito.workers.dev/api/pulso` y el proyecto Firebase
-`burritounmsm`, sin marcadores de sandbox ni endpoints de emulador (los
-literales `http://localhost` del bundle son valores internos de React Router y
-Firebase, no endpoints configurados). El release quedó `FINALIZED`: versión
-`1952a1f1e616bfa3`, release `1794779471348000`, `2026-11-15T21:51:11.348Z`; la
-versión live previa `004ca7b34e3d9821` (`2026-11-06T15:04:05.158Z`) sirve de
-referencia de rollback. Los cuatro archivos publicados coinciden byte a byte con
-`dist/` (SHA-256) y `/pulso` devuelve `index.html`. En un navegador sin sesión,
-la pantalla de acceso renderizó sin excepciones ni peticiones locales, y el
-Worker respondió `401 invalid-token` a un token malformado con el CORS correcto.
-La validación real con la cuenta administrativa habitual mostró «Sin registros
-de PULSO» y «Todavía no hay comprobaciones guardadas para el bus AHK-459», sin
-errores de acceso ni de conectividad. No se solicitaron ni registraron
-contraseñas o tokens, y las tres tablas D1 siguieron con cero filas. La
-autorización leyó `/administradores/{uid}` del proyecto `burritounmsm`, pero no
-se consultó la ubicación operativa del bus.
-
-**Refresco automático de la pantalla.** Se agregó la consulta periódica cada
-60 s descrita en §3.2 y se verificó en local antes de publicar: lint y build
-aprobados, 26 pruebas de cliente (14 de contrato, 4 de presentación, 2 de build
-y 6 de navegador con reloj controlado, `StrictMode` y HTTP simulado) y 8 de
-integración local con Auth, RTDB y D1 emulados. Las pruebas de navegador cubren
-la consulta a los 60 s y la ausencia a los 59,99 s, el botón manual sin
-solapamiento, la conservación del DOM, la antigüedad sin rejuvenecer, el error
-que conserva los datos previos y luego se recupera, la retirada de datos tras
-una denegación, la cancelación al desmontar con temporizadores limpios y las
-respuestas tardías ignoradas. La publicación fue solo de Hosting: release
-`1794782963690000`, versión `3b69ad434e3d33d7`, `2026-11-15T22:49:23.690Z`; la
-versión live previa `1952a1f1e616bfa3` (release `1794779471348000`) sirve de
-rollback. Los archivos publicados coinciden byte a byte con `dist/` (SHA-256) y
-`/pulso` resuelve a `index.html`. Queda pendiente la comprobación manual con una
-sesión administrativa real en producción (recarga forzada y espera de 60 s).
-
-**Activación de la vigilancia (`2026-11-15`).** Con autorización explícita se
-desplegó solo el Worker con `PULSO_SCHEDULE_ENABLED: "true"` y
-`triggers.crons: ["* * * * *"]` (versión `add07c85-1cb5-49d8-a24f-4bd72544e2d5`,
-deployment `b158ccdf-3f3c-495e-a4a7-3f8c869b39bd`, `2026-11-15T22:17:04.347877Z`);
-la versión previa `46aa9e10-6d25-4f49-9fea-40e7ef58c161` queda como rollback. El
-cron se propagó con demora de minutos. `wrangler tail` capturó dos ejecuciones
-programadas reales consecutivas (revisiones 1 y 2), sin excepciones, con
-`source: ok`, `isActive: false` y resultados idénticos a D1; el bus estaba
-inactivo, por eso `monitoring_active` quedó en 0 sin incidentes inventados. La
-recuperación y el corte reales no se forzaron.
-
-**Inicio observado del recorrido (`2026-11-18`).** La migración aditiva `0003` se
-aplicó primero en la D1 remota y se verificó la integridad antes de desplegar el
-Worker. Después se publicó el Worker con la versión
-`0423f706-8ee8-4cec-a3d4-3f09bef83e33` (deployment
-`e1178ef4-926c-48e9-ad2f-f31a0d4195a5`, `2026-11-18T20:16:04.969567Z`; rollback
-`add07c85-1cb5-49d8-a24f-4bd72544e2d5`) sin cambiar cron, variables, D1 ni
-autorización, y Central con release `1795033146333000` (versión
-`3026576fcc32c269`, `2026-11-18T20:19:06.333Z`; rollback `3b69ad434e3d33d7`).
-Aprobaron 237 pruebas —147 Worker, 45 evaluador, 29 cliente/presentación, 9
-integración de pantalla, 6 API y 1 histórica de RTDB— además de typecheck, lint,
-build y dry-run. Dos ejecuciones cron reales posteriores (revisiones 4193 y 4194,
-`20:17:12.259Z` y `20:18:12.346Z`) persistieron el estado sin errores. Los cuatro
-archivos publicados coinciden con `dist/` (SHA-256) y `/pulso` devuelve
-`index.html`; la API mantiene `401` sin token y con token malformado, el CORS
-exacto y `/evaluate` en `403`. Estado al cerrar: 1 fila de estado, 4194
-observaciones y 0 incidentes, con el bus inactivo e inicio `null`, por lo que
-ambos indicadores muestran «No aplica». **Pendiente la comprobación manual de los
-dos indicadores durante un recorrido activo nuevo con el Motorola**; no se forzó
-actividad ni un incidente en producción.
-
-**Selección de modo.** `executionConfig.ts` interpreta `PULSO_EXECUTION`
-ausente o `local` como ejecución local; `cloudflare` habilita el modo remoto;
-cualquier otro valor falla con `invalid-execution-configuration`. En remoto,
-`validateRemoteConfiguration` exige la configuración completa antes de consultar
-Firebase o escribir en D1: modo remoto explícito, `PULSO_LOCAL_ONLY=false`,
-fuente `operative-public`, memoria `d1` con binding `PULSO_DB`, interruptor
-declarado como `true` o `false`, umbrales exactos, timeout entre 1 y 30000 ms,
-bus objetivo válido, destino de autorización no local y origen de Central HTTPS
-sin ruta ni credenciales. Una configuración incompleta o mezclada no lee ni
-escribe: la API responde `503 read-not-configured` y la comprobación falla
-cerrada. Los modos locales conservan su comportamiento y no adquieren permisos
-remotos.
-
-**Interruptor y cron.** Son condiciones independientes: el interruptor
-(`PULSO_SCHEDULE_ENABLED`) decide si la ejecución remota puede evaluar y
-persistir, y `triggers.crons` decide si Cloudflare invoca el Worker. Con el
-interruptor apagado, el handler programado registra `{"status":"schedule-disabled"}`
-y retorna sin consultar ni escribir. Con `crons` vacío no hay invocación
-programada aunque el interruptor esté encendido. Para desactivar el cron hay que
-declarar `crons: []` de forma explícita; omitir la clave no elimina un trigger ya
-publicado. La activación de ambos exige autorización explícita y un nuevo
-despliegue de la configuración, y un cambio de cron no se propaga de inmediato.
-
-**API remota.** `GET /api/pulso` conserva el mismo contrato y la misma
-autorización: `Authorization: Bearer` con el ID token de Central, verificado por
-Firebase contra `/administradores/{uid}` con las reglas existentes, sin
-contraseña ni login adicional. En remoto solo acepta HTTPS y `GET` sin query; si
-la petición trae `Origin`, debe coincidir exactamente con `PULSO_CENTRAL_ORIGIN`.
-`OPTIONS` responde 204 para `GET` + `Authorization` y los errores dirigidos a un
-origen permitido incluyen CORS. La lectura sigue siendo exclusivamente `SELECT`
-en D1: no ejecuta el evaluador ni consulta el tracking. Por eso la pantalla puede
-leer lo guardado aunque el cron esté apagado; sin comprobaciones previas devuelve
-`no-data`. En la validación inicial de producción, con la D1 vacía, esa lectura
-autenticada devolvió
-`no-data` y la pantalla lo presentó como ausencia de registros. `/evaluate`
-continúa siendo local: en remoto responde `403 local-only`.
-
-**Conexión de Central.** El cliente de la pantalla
-(`src/shared/config/env.ts`, `pulso_service.ts`) lee `VITE_PULSO_API_ORIGIN`,
-valida que sea un origen HTTPS sin ruta, credenciales, query ni fragmento, y que
-no sea loopback, y compone `${origen}/api/pulso`. Si la variable falta en una
-build de producción, el error aparece solo al abrir PULSO y no bloquea el resto
-del panel. Los modos locales siguen usando el proxy `/api/pulso` sin cargar el
-`.env` operativo. La petición reutiliza el token de la sesión, sin cookies ni
-redirecciones, y no define una segunda autenticación.
-
-**Valores resueltos y pendientes.** `PULSO_CENTRAL_ORIGIN` está configurado con
-`https://burritounmsm.web.app`, el Worker responde en
-`https://pulso-monitor.elburrito.workers.dev` y la build publicada de Central usa
-ese valor en `VITE_PULSO_API_ORIGIN`. Central está publicada, la lectura
-autenticada fue validada y el interruptor y el cron están activos. Queda
-pendiente la validación operativa: los dos indicadores durante un recorrido
-activo nuevo con el Motorola y la comprobación manual del refresco con una sesión
-administrativa real.
-
-**Orden de despliegue y activación** (cada paso requiere autorización explícita;
-los pasos 1 a 6 se ejecutaron):
-
-1. Crear la D1 `pulso-memory-production` en la cuenta confirmada (hecho).
-2. Aplicar las migraciones en la D1 remota (hecho: `0001` y `0002`; después
-   `0003` con la mejora del inicio observado).
-3. Completar `PULSO_CENTRAL_ORIGIN` en `env.production` (hecho).
-4. Desplegar el Worker (hecho) y verificar la API remota sin token y el CORS
-   (hecho); después se validó la lectura con una sesión administrativa real en
-   producción (hecho).
-5. Compilar Central con `VITE_PULSO_API_ORIGIN` y publicar Hosting (hecho:
-   release `1794779471348000`, versión `1952a1f1e616bfa3`; después el refresco y
-   los indicadores del inicio observado, hasta la versión `3026576fcc32c269`).
-6. Activar el interruptor y el cron de un minuto (hecho: dos ejecuciones
-   programadas reales verificadas).
-7. Verificar que la actualización funciona con la computadora apagada, que el
-   tracking consultado es el operativo (no el emulado) y que las consultas sin
-   autorización siguen bloqueadas (pendiente).
-8. Verificar «Inicio observado del recorrido» y «Tiempo de recorrido observado»
-   durante un recorrido activo nuevo con el Motorola (pendiente).
-
-La integración con Central quedó validada en producción y la vigilancia
-automática está activa desde el `2026-11-15`. Las notificaciones externas quedan
-pospuestas (ROADMAP §2).
+La configuración, las referencias de publicación y la integridad de migraciones
+están consolidadas en [PULSO §8](PULSO.md#8-operación-en-producción); las ocho
+pruebas, en [§9](PULSO.md#9-validación-operativa-del-mvp). Las limitaciones no son
+fallos atribuidos a esas pruebas. La evolución posterior pertenece a
+[ROADMAP §2.1](ROADMAP.md#21-evolución-de-pulso-posterior-al-mvp), sin dar por cerrado
+el MVP general del ecosistema.
 
 ## 4. Arquitectura de BurritoUserApp
 
