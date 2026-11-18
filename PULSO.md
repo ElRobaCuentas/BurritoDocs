@@ -120,18 +120,20 @@ con un incidente persistido de acceso a la fuente del tracking.
 ### Clasificación del seguimiento
 
 La clasificación resume la última comprobación; no es el estado de un incidente
-ni una certificación de la situación actual del bus.
+ni una certificación de la situación actual del bus. Central la presenta con una
+etiqueta operativa en «Estado del recorrido» y conserva la etiqueta técnica en
+«Detalle del estado registrado».
 
-| Código | Etiqueta de Central y significado |
-|--------|----------------------------------|
-| `active-publishing` | Recorrido activo · Publicación reciente. |
-| `active-publication-stale` | Recorrido activo · Publicación interrumpida. |
-| `recovering-pending` | Recuperación pendiente de confirmación. |
-| `recovering-confirmed` | Recuperación confirmada; después puede volver a publicación reciente. |
-| `inactive-unconfirmed` | Recorrido inactivo · Finalización no confirmada: hay `false`, pero falta evidencia independiente de detención. |
-| `source-unavailable` | Fuente inaccesible: no se pudo obtener una respuesta utilizable de RTDB. |
-| `insufficient-data` | Información insuficiente: falta una declaración o un timestamp utilizable para decidir. |
-| `inactive-finalized` | Recorrido finalizado con evidencia. Existe en el evaluador, pero requiere telemetría que el adaptador actual no proporciona. |
+| Código | Etiqueta operativa | Etiqueta técnica y significado |
+|--------|--------------------|--------------------------------|
+| `active-publishing` | Seguimiento funcionando | Recorrido activo · Publicación reciente. |
+| `active-publication-stale` | Seguimiento interrumpido | Recorrido activo · Publicación interrumpida. |
+| `recovering-pending` | Seguimiento en recuperación | Recuperación pendiente de confirmación. |
+| `recovering-confirmed` | Recuperación confirmada | Recuperación confirmada; después puede volver a publicación reciente. |
+| `inactive-unconfirmed` | Bus fuera de recorrido | Recorrido inactivo · Finalización no confirmada: hay `false`, pero falta evidencia independiente de detención. |
+| `source-unavailable` | Estado del recorrido sin confirmar | Fuente inaccesible: no se pudo obtener una respuesta utilizable de RTDB. |
+| `insufficient-data` | Información del recorrido incompleta | Información insuficiente: falta una declaración o un timestamp utilizable para decidir. |
+| `inactive-finalized` | Bus fuera de recorrido | Recorrido finalizado con evidencia. Existe en el evaluador, pero requiere telemetría que el adaptador actual no proporciona. |
 
 El evaluador admite campos futuros como `tripSessionId`, `gpsFixId`,
 `gpsFixTimestamp` y `stopEvidence`; se simulan en pruebas del dominio. No son
@@ -199,30 +201,76 @@ recorrido archivada por esta mejora.
 
 ## 7. Interfaz de Central
 
+`/pulso` agrupa la lectura en tres bloques —«Estado del recorrido», «Estado de
+PULSO» e «Incidentes»— y un aviso superior cuando la comprobación es antigua.
 Todas las fechas se presentan en `America/Lima`. Los indicadores describen los
-registros consultados, con estas interpretaciones:
+registros consultados; no certifican la situación actual del bus, del monitor ni
+de la red.
+
+### Estado del recorrido
+
+El encabezado usa la etiqueta operativa de la clasificación (§5). El bloque
+muestra la última publicación del bus y, solo mientras la vigilancia está activa
+y la clasificación no es de inactividad, el inicio y el tiempo de recorrido.
 
 | Indicador | Qué representa |
 |-----------|----------------|
-| Estado del recorrido | Clasificación del evaluador en la última comprobación (§5). |
-| Declaración del recorrido | `declaredActive`: activo, inactivo o desconocido según la declaración recibida en esa comprobación. |
-| Vigilancia registrada | `monitoringActive`: memoria de actividad observada; no es el interruptor global del cron. |
-| Última publicación observada | `publicationTimestamp` recibido de RTDB, si es utilizable; no es hora del fix GPS ni hora de lectura de PULSO. |
-| Inicio observado del recorrido (Lima) | Primera comprobación del período activo registrado. No es necesariamente la hora de INICIAR en DriverApp. |
-| Tiempo de recorrido observado | Estimación desde ese inicio, incluyendo interrupciones. No mide transmisión GPS continua. |
-| Última comprobación | `evaluatedAt`: cuándo PULSO evaluó el dato guardado. |
-| Antigüedad | Tiempo desde esa comprobación, no desde la última publicación del teléfono. |
-| Accesibilidad de Firebase | «Fuente en esa comprobación»: accesible, sin nodo de tracking o inaccesible; no certifica el acceso actual. |
-| Incidentes activos | Incidentes que permanecían abiertos en los registros consultados. |
-| Historial de incidentes | Últimos 20, abiertos y cerrados, ordenados por apertura más reciente; no es la totalidad de D1. |
+| Encabezado y descripción | Etiqueta operativa de la clasificación en la última comprobación (§5). |
+| Inicio observado | Primera comprobación del período activo registrado. No es necesariamente la hora de INICIAR en DriverApp. |
+| Tiempo de recorrido | Estimación desde ese inicio, incluyendo interrupciones. No mide transmisión GPS continua. |
+| Última publicación del bus | `publicationTimestamp` recibido de RTDB, si es utilizable; no es hora del fix GPS ni hora de lectura de PULSO. |
+| Detención | Solo en estados inactivos: «Declarada» o «Con evidencia registrada», con «Sin verificación independiente» cuando falta esa evidencia. |
+| Detalle del estado registrado | Desplegable con la etiqueta técnica, `declaredActive` y `monitoringActive`. |
 
-**Inicio y duración:** con vigilancia inactiva, ambos muestran «No aplica»; con
-vigilancia activa pero inicio desconocido, «Sin información disponible» y «No
-calculable». Con datos recientes y fuente/declaración activas confirmadas, el
-reloj del servidor ancla la estimación y el tiempo local la hace avanzar. Si los
-datos envejecen, falla la consulta, la fuente no está `ok` o la declaración es
-desconocida, se limita a la última comprobación guardada con la etiqueta
-«(hasta la última comprobación guardada)».
+Con vigilancia inactiva o clasificación de inactividad, el bloque omite inicio y
+duración en lugar de mostrar «No aplica». Con vigilancia activa y sin inicio
+confiable muestra «Inicio no determinado» y omite la duración. Si los datos están
+vencidos o la consulta falló, el bloque pasa a tono de advertencia y antepone
+«Último estado: » con la aclaración «Según la última revisión guardada; falta
+confirmar la situación actual».
+
+**Inicio y duración:** con datos recientes y fuente/declaración activas
+confirmadas, el reloj del servidor ancla la estimación y el tiempo local la hace
+avanzar. Si los datos envejecen, falla la consulta, la fuente no está `ok` o la
+declaración es desconocida, se limita a la última comprobación guardada con la
+etiqueta «(hasta la última comprobación guardada)».
+
+### Estado de PULSO
+
+Este bloque describe la revisión del monitor, no el recorrido. Muestra cuándo se
+realizó la última revisión, su antigüedad y el resultado de la conexión con
+Firebase.
+
+| Indicador | Qué representa |
+|-----------|----------------|
+| Encabezado | «Revisión reciente», «Sin revisión reciente», «Última revisión guardada», «Revisión sin datos del bus» o «Revisión con fallo de conexión». |
+| Última revisión | `evaluatedAt`: cuándo PULSO evaluó el dato guardado. |
+| Hace cuánto | Tiempo desde esa revisión, no desde la última publicación del teléfono. |
+| Conexión con Firebase | «Consulta completada», «Consulta completada, sin datos del bus» o «No se pudo consultar», según el resultado de esa revisión. |
+
+El encabezado prioriza la antigüedad: una revisión vencida muestra «Sin revisión
+reciente» aunque su fuente haya sido accesible. Con datos vencidos o consulta
+fallida, la conexión se refiere a la última revisión guardada y no confirma el
+acceso actual.
+
+### Incidentes
+
+Un único bloque agrupa los problemas abiertos y el historial reciente, con el
+número de incidentes activos en una insignia.
+
+- **Incidentes activos:** los que permanecían abiertos en la última revisión.
+  Sin ellos, muestra «Sin incidentes activos».
+- **Historial reciente:** los últimos 20 incidentes, abiertos y cerrados, del
+  más reciente al más antiguo. No es la totalidad de D1 y puede incluir un
+  incidente que también aparezca como activo.
+- Cada incidente muestra tipo, estado «Abierto»/«Cerrado», inicio, última
+  observación y cierre; al estar cerrado agrega la duración registrada y el
+  resultado (§5). Abierto, indica «Sin cierre registrado».
+
+Sin incidentes guardados, el historial lo dice explícitamente y aclara que las
+revisiones del bus sí están guardadas.
+
+### Actualización, antigüedad y errores
 
 **Dos ciclos independientes:** el Worker comprueba cada minuto; Central consulta
 al entrar y cada 60 s mientras la pantalla permanece montada. Actualizar repite
@@ -230,14 +278,15 @@ la consulta, sin evaluar ni escribir D1. No hay sincronización entre ambos cicl
 ni garantía de que la pantalla refleje una comprobación inmediatamente.
 
 Central impide consultas solapadas, cancela al salir y descarta respuestas
-tardías. Un error conserva el último resultado con aviso; una denegación 401/403
+tardías. Un error conserva los últimos registros con aviso; una denegación 401/403
 retira los datos. Sin comprobaciones guardadas muestra «Sin registros de PULSO»;
 no lo confunde con un error ni con ausencia de incidentes.
 
 La antigüedad visual avanza sin reclasificar el seguimiento ni crear incidentes.
-Superado el umbral de antigüedad de comprobación muestra «Datos antiguos»; una
-consulta exitosa no rejuvenece una comprobación vieja. La advertencia significa
-que el estado y los incidentes guardados no confirman la situación actual.
+Superado el umbral de antigüedad de comprobación, un aviso indica «Datos
+antiguos»; una consulta exitosa no rejuvenece una comprobación vieja. La
+advertencia significa que el estado y los incidentes guardados no confirman la
+situación actual.
 
 ## 8. Operación en producción
 
