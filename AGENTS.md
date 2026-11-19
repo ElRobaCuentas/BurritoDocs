@@ -74,6 +74,7 @@ solicitud explícita.
 
 | Documento | Contenido |
 |-----------|-----------|
+| `VERSIONADO_Y_PUBLICACION.md` | Política y procedimiento oficial de entregas, artefactos y distribución del MVP |
 | `ARCHITECTURE.md` | Arquitectura, flujos y limitaciones del sistema |
 | `FIREBASE_SCHEMA.md` | Paths y nodos de Realtime Database |
 | `DECISIONS.md` | Decisiones arquitectónicas (ADR) |
